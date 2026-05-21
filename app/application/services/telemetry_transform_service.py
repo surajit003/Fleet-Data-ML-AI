@@ -38,7 +38,7 @@ class TelemetryTransformService:
         row_count = 0
         duplicate_row_count = 0
         duplicate_diagnostics: list[DuplicateRowDiagnostic] = []
-        seen_rows: dict[tuple[str, str], int] = {}
+        seen_rows: dict[tuple[str, ...], int] = {}
 
         with source_path.open("r", encoding="utf-8-sig", newline="") as source_file:
             reader = csv.DictReader(source_file)

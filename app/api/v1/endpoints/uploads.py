@@ -7,7 +7,11 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from app.application.services.telemetry_transform_service import TelemetryTransformService
 from app.application.services.telemetry_upload_service import TelemetryUploadService
 from app.core.config import Settings, get_settings
+from app.domain.entities.duplicate_row_diagnostic import DuplicateRowDiagnostic
 from app.domain.entities.telemetry_upload_payload import TelemetryUploadPayload
+from app.domain.entities.upload_audit_detail import UploadAuditDetail
+from app.domain.entities.upload_audit_record import UploadAuditRecord
+from app.domain.entities.upload_sanity_summary import UploadSanitySummary
 from app.domain.exceptions import InvalidTelemetryUploadError
 from app.domain.repositories.upload_audit_repository import UploadAuditRepository
 from app.domain.repositories.upload_storage_repository import UploadStorageRepository
@@ -139,7 +143,9 @@ def _render_upload_page(app_name: str, api_prefix: str) -> str:
     )
 
 
-def _to_upload_audit_record_response(upload: object) -> UploadAuditRecordResponse:
+def _to_upload_audit_record_response(
+    upload: UploadAuditRecord,
+) -> UploadAuditRecordResponse:
     return UploadAuditRecordResponse(
         status=upload.status,
         stored_filename=upload.stored_filename,
@@ -160,7 +166,9 @@ def _to_upload_audit_record_response(upload: object) -> UploadAuditRecordRespons
     )
 
 
-def _to_sanity_summary_response(sanity_summary: object) -> TelemetrySanitySummary:
+def _to_sanity_summary_response(
+    sanity_summary: UploadSanitySummary,
+) -> TelemetrySanitySummary:
     return TelemetrySanitySummary(
         preview_columns=list(sanity_summary.preview_columns),
         preview_rows=[
@@ -183,7 +191,7 @@ def _to_sanity_summary_response(sanity_summary: object) -> TelemetrySanitySummar
 
 
 def _to_duplicate_diagnostics_response(
-    duplicate_diagnostics: tuple[object, ...],
+    duplicate_diagnostics: tuple[DuplicateRowDiagnostic, ...],
 ) -> list[DuplicateRowDiagnosticResponse]:
     return [
         DuplicateRowDiagnosticResponse(
@@ -197,6 +205,16 @@ def _to_duplicate_diagnostics_response(
         )
         for item in duplicate_diagnostics
     ]
+
+
+def _to_upload_detail_response(detail: UploadAuditDetail) -> UploadDetailResponse:
+    return UploadDetailResponse(
+        upload=_to_upload_audit_record_response(detail.upload),
+        sanity_summary=_to_sanity_summary_response(detail.sanity_summary),
+        duplicate_diagnostics=_to_duplicate_diagnostics_response(
+            detail.duplicate_diagnostics
+        ),
+    )
 
 
 @ui_router.get("/upload", response_class=HTMLResponse, tags=["ui"])
@@ -241,13 +259,7 @@ def read_upload_detail(
     if detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found.")
 
-    return UploadDetailResponse(
-        upload=_to_upload_audit_record_response(detail.upload),
-        sanity_summary=_to_sanity_summary_response(detail.sanity_summary),
-        duplicate_diagnostics=_to_duplicate_diagnostics_response(
-            detail.duplicate_diagnostics
-        ),
-    )
+    return _to_upload_detail_response(detail)
 
 
 @router.post("/history/{stored_filename}/prepare-transform", response_model=UploadDetailResponse)
@@ -268,13 +280,7 @@ def prepare_upload_for_transform(
     if updated_detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found.")
 
-    return UploadDetailResponse(
-        upload=_to_upload_audit_record_response(updated_detail.upload),
-        sanity_summary=_to_sanity_summary_response(updated_detail.sanity_summary),
-        duplicate_diagnostics=_to_duplicate_diagnostics_response(
-            updated_detail.duplicate_diagnostics
-        ),
-    )
+    return _to_upload_detail_response(updated_detail)
 
 
 @router.post("/history/{stored_filename}/run-transform", response_model=UploadDetailResponse)
@@ -310,13 +316,7 @@ def run_transform_for_upload(
     if updated_detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found.")
 
-    return UploadDetailResponse(
-        upload=_to_upload_audit_record_response(updated_detail.upload),
-        sanity_summary=_to_sanity_summary_response(updated_detail.sanity_summary),
-        duplicate_diagnostics=_to_duplicate_diagnostics_response(
-            updated_detail.duplicate_diagnostics
-        ),
-    )
+    return _to_upload_detail_response(updated_detail)
 
 
 @router.get("/history/{stored_filename}/processed-artifact")
