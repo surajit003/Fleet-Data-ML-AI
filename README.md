@@ -11,6 +11,7 @@ This first milestone sets up a clean FastAPI service skeleton with:
 - clean architecture layering across API, application, domain, and infrastructure
 - application factory and lifespan hooks
 - health and root endpoints
+- CSV telemetry upload with fixed Trackzee column validation
 - environment-based configuration with Pydantic Settings
 - structured JSON logging with `structlog`
 - tests, linting, and strict type checking
@@ -60,6 +61,8 @@ The service exposes:
 
 - `GET /`
 - `GET /api/v1/health`
+- `GET /upload`
+- `POST /api/v1/uploads/telemetry`
 - interactive docs at `GET /docs`
 
 ## Planned future milestones
@@ -114,6 +117,20 @@ Useful endpoints after deploy:
 
 - `GET /`
 - `GET /api/v1/health`
+- `GET /upload`
+- `POST /api/v1/uploads/telemetry`
+
+## Telemetry upload contract
+
+The telemetry upload endpoint currently accepts:
+
+- CSV files only
+- maximum file size of `2 MB`
+- the exact Trackzee export header order from `trakzee_export.xlsx`
+
+The raw file is stored locally under `data/raw/uploads/` for now, and the application returns the internal domain field mapping used by later processing stages.
+
+There is also a small HTML upload page at `GET /upload` that posts to the same API endpoint.
 
 ## Scope guardrails
 
