@@ -1,0 +1,4 @@
+.github/
+tests/
+README.md
+fastapi-cloud.md
