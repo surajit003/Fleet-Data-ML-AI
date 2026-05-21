@@ -358,7 +358,11 @@ def download_processed_artifact(
             detail="Processed artifact could not be found.",
         )
 
-    return FileResponse(path, media_type="text/csv", filename=path.name)
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=path.name,
+    )
 
 
 @router.post(

@@ -7,11 +7,17 @@ const summary = document.getElementById("upload-summary");
 const warnings = document.getElementById("upload-warnings");
 const previewTableWrapper = document.getElementById("preview-table-wrapper");
 const history = document.getElementById("upload-history");
+const analyticsVehicleRegistration = document.getElementById("analytics-vehicle-registration");
+const analyticsStartRecordedAt = document.getElementById("analytics-start-recorded-at");
+const analyticsEndRecordedAt = document.getElementById("analytics-end-recorded-at");
+const runAnalyticsButton = document.getElementById("run-analytics-button");
+const analyticsSummary = document.getElementById("analytics-summary");
 const prepareTransformButton = document.getElementById("prepare-transform-button");
 const runTransformButton = document.getElementById("run-transform-button");
 const downloadProcessedLink = document.getElementById("download-processed-link");
 const duplicateDiagnosticsCard = document.getElementById("duplicate-diagnostics-card");
 const duplicateDiagnosticsList = document.getElementById("duplicate-diagnostics-list");
+let currentStoredFilename = "";
 
 function canPrepareForTransform(status) {
   return status === "validated" || status === "validated_with_warnings";
@@ -26,6 +32,7 @@ function applyCurrentDetail(data) {
   if (!uploadData.stored_filename) {
     return;
   }
+  currentStoredFilename = uploadData.stored_filename;
 
   if (prepareTransformButton) {
     prepareTransformButton.dataset.storedFilename = uploadData.stored_filename;
@@ -38,6 +45,9 @@ function applyCurrentDetail(data) {
   if (downloadProcessedLink) {
     downloadProcessedLink.href = `/api/v1/uploads/history/${encodeURIComponent(uploadData.stored_filename)}/processed-artifact`;
     downloadProcessedLink.hidden = !uploadData.processed_path;
+  }
+  if (runAnalyticsButton) {
+    runAnalyticsButton.disabled = !uploadData.processed_path;
   }
 }
 
@@ -230,8 +240,83 @@ async function loadUploadDetail(apiPrefix, storedFilename) {
   renderPreviewTable(data);
   renderDuplicateDiagnostics(data);
   applyCurrentDetail(data);
+  if (data.upload?.processed_path) {
+    void runDuckDbSummary();
+  } else if (analyticsSummary) {
+    analyticsSummary.innerHTML = "";
+  }
   results.hidden = false;
   message.textContent = "Loaded a previous ingestion run for review.";
+  message.className = "status";
+}
+
+function renderAnalyticsSummary(data) {
+  if (!analyticsSummary) {
+    return;
+  }
+
+  const rows = [
+    ["Rows", String(data.row_count)],
+    ["Vehicles", String(data.distinct_vehicle_count)],
+    ["First", data.first_recorded_at ?? "Not detected"],
+    ["Last", data.last_recorded_at ?? "Not detected"],
+    ["Filter", data.vehicle_registration ?? "All vehicles"],
+  ];
+
+  analyticsSummary.innerHTML = rows
+    .map(
+      ([label, value]) =>
+        `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`,
+    )
+    .join("");
+}
+
+async function runDuckDbSummary() {
+  if (!runAnalyticsButton || !analyticsSummary || !currentStoredFilename) {
+    return;
+  }
+
+  const apiPrefix = window.telemetryUploadConfig?.apiPrefix ?? "/api/v1";
+  const params = new URLSearchParams();
+
+  const vehicleRegistration =
+    analyticsVehicleRegistration instanceof HTMLInputElement
+      ? analyticsVehicleRegistration.value.trim()
+      : "";
+  const startRecordedAt =
+    analyticsStartRecordedAt instanceof HTMLInputElement
+      ? analyticsStartRecordedAt.value
+      : "";
+  const endRecordedAt =
+    analyticsEndRecordedAt instanceof HTMLInputElement
+      ? analyticsEndRecordedAt.value
+      : "";
+
+  if (vehicleRegistration) {
+    params.set("vehicle_registration", vehicleRegistration);
+  }
+  if (startRecordedAt) {
+    params.set("start_recorded_at", startRecordedAt);
+  }
+  if (endRecordedAt) {
+    params.set("end_recorded_at", endRecordedAt);
+  }
+
+  runAnalyticsButton.disabled = true;
+  const response = await fetch(
+    `${apiPrefix}/analytics/telemetry/${encodeURIComponent(currentStoredFilename)}/summary?${params.toString()}`,
+  );
+  const data = await response.json();
+  runAnalyticsButton.disabled = false;
+
+  if (!response.ok) {
+    message.textContent = data.detail ?? "DuckDB summary failed.";
+    message.className = "error";
+    return;
+  }
+
+  renderAnalyticsSummary(data);
+  message.textContent = "DuckDB summary loaded.";
   message.className = "status";
 }
 
@@ -278,6 +363,11 @@ if (form && input && message && results && summary && warnings && previewTableWr
     renderPreviewTable(data);
     renderDuplicateDiagnostics(data);
     applyCurrentDetail(data);
+    if (data.upload?.processed_path) {
+      void runDuckDbSummary();
+    } else if (analyticsSummary) {
+      analyticsSummary.innerHTML = "";
+    }
     await loadHistory(apiPrefix);
 
     message.textContent = "Upload completed. Review the sanity check before you ingest more data.";
@@ -347,7 +437,19 @@ if (form && input && message && results && summary && warnings && previewTableWr
     renderDuplicateDiagnostics(data);
     applyCurrentDetail(data);
     await loadHistory(apiPrefix);
+    if (data.upload?.processed_path) {
+      void runDuckDbSummary();
+    }
     message.textContent = "Transform completed and curated output was recorded.";
     message.className = "status";
+  });
+  runAnalyticsButton?.addEventListener("click", async () => {
+    await runDuckDbSummary();
+  });
+  analyticsVehicleRegistration?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void runDuckDbSummary();
+    }
   });
 }

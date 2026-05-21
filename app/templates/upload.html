@@ -113,6 +113,32 @@
               <div class="history-empty">No uploads have been recorded yet.</div>
             </div>
           </div>
+          <div class="result-card">
+            <h2>DuckDB filter</h2>
+            <p class="schema-note">
+              Filter the curated telemetry file before you move to a richer dashboard.
+            </p>
+            <div class="field-row">
+              <label for="analytics-vehicle-registration">Vehicle registration</label>
+              <input
+                id="analytics-vehicle-registration"
+                type="text"
+                placeholder="Optional exact match"
+              />
+            </div>
+            <div class="field-row">
+              <label for="analytics-start-recorded-at">Start recorded at</label>
+              <input id="analytics-start-recorded-at" type="datetime-local" />
+            </div>
+            <div class="field-row">
+              <label for="analytics-end-recorded-at">End recorded at</label>
+              <input id="analytics-end-recorded-at" type="datetime-local" />
+            </div>
+            <div class="action-row">
+              <button id="run-analytics-button" type="button">Run DuckDB summary</button>
+            </div>
+            <dl id="analytics-summary" class="summary-list"></dl>
+          </div>
         </aside>
       </section>
     </main>

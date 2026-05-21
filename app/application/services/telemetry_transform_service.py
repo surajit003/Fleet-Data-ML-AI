@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+import duckdb
+
 from app.domain.entities.duplicate_row_diagnostic import DuplicateRowDiagnostic
 from app.domain.telemetry_schema import REQUIRED_TELEMETRY_COLUMNS, TELEMETRY_TO_DOMAIN_FIELD_MAP
 
@@ -34,7 +36,9 @@ class TelemetryTransformService:
             raise FileNotFoundError(stored_filename)
 
         self._processed_storage_dir.mkdir(parents=True, exist_ok=True)
-        processed_path = self._processed_storage_dir / f"curated_{stored_filename}"
+        base_name = Path(stored_filename).stem
+        temp_csv_path = self._processed_storage_dir / f"curated_{base_name}.csv"
+        processed_path = self._processed_storage_dir / f"curated_{base_name}.parquet"
         row_count = 0
         duplicate_row_count = 0
         duplicate_diagnostics: list[DuplicateRowDiagnostic] = []
@@ -42,7 +46,7 @@ class TelemetryTransformService:
 
         with source_path.open("r", encoding="utf-8-sig", newline="") as source_file:
             reader = csv.DictReader(source_file)
-            with processed_path.open("w", encoding="utf-8", newline="") as target_file:
+            with temp_csv_path.open("w", encoding="utf-8", newline="") as target_file:
                 writer = csv.DictWriter(
                     target_file,
                     fieldnames=list(TELEMETRY_TO_DOMAIN_FIELD_MAP.values()),
@@ -79,6 +83,17 @@ class TelemetryTransformService:
                     )
                     row_count += 1
 
+        with duckdb.connect(database=":memory:") as connection:
+            processed_path_sql = self._sql_string_literal(processed_path)
+            connection.execute(
+                f"COPY (SELECT * FROM read_csv_auto(?)) TO {processed_path_sql} "
+                "(FORMAT PARQUET)",
+                [str(temp_csv_path)],
+            )
+
+        if temp_csv_path.exists():
+            temp_csv_path.unlink()
+
         return TransformResult(
             processed_path=processed_path,
             row_count=row_count,
@@ -104,3 +119,7 @@ class TelemetryTransformService:
                 "and position."
             )
         return "Matched a previously seen telemetry event using device and timestamp."
+
+    def _sql_string_literal(self, path: Path) -> str:
+        escaped_path = str(path).replace("'", "''")
+        return f"'{escaped_path}'"

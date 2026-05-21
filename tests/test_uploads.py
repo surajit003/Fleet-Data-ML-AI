@@ -243,7 +243,9 @@ def test_run_transform_updates_status_and_artifact_metadata() -> None:
     assert body["upload"]["transformed_row_count"] == 1
     assert body["upload"]["duplicate_row_count"] == 0
     assert body["upload"]["processed_path"] is not None
-    assert body["upload"]["processed_path"].endswith(f"curated_{stored_filename}")
+    assert body["upload"]["processed_path"].endswith(
+        f"curated_{Path(stored_filename).stem}.parquet"
+    )
 
 
 def test_run_transform_skips_duplicate_rows() -> None:
@@ -343,9 +345,85 @@ def test_processed_artifact_download_returns_curated_file() -> None:
     )
 
     assert artifact_response.status_code == 200
-    assert artifact_response.headers["content-type"].startswith("text/csv")
-    assert "device_imei" in artifact_response.text
-    assert "vehicle_registration" in artifact_response.text
+    assert artifact_response.headers["content-type"].startswith("application/octet-stream")
+    assert artifact_response.headers["content-disposition"].endswith(".parquet\"")
+
+
+def test_duckdb_summary_returns_basic_metrics() -> None:
+    csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{TRACKZEE_ROW}\n".encode()
+
+    upload_response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert upload_response.status_code == 201
+    stored_filename = upload_response.json()["stored_filename"]
+
+    prepare_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/prepare-transform"
+    )
+    assert prepare_response.status_code == 200
+
+    transform_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/run-transform"
+    )
+    assert transform_response.status_code == 200
+
+    analytics_response = client.get(
+        f"/api/v1/analytics/telemetry/{stored_filename}/summary"
+    )
+
+    assert analytics_response.status_code == 200
+    body = analytics_response.json()
+    assert body["stored_filename"] == stored_filename
+    assert body["row_count"] == 1
+    assert body["distinct_vehicle_count"] == 1
+    assert body["first_recorded_at"] == "2026-04-29T16:49:50"
+    assert body["last_recorded_at"] == "2026-04-29T16:49:50"
+    assert body["vehicle_registration"] is None
+    assert body["start_recorded_at"] is None
+    assert body["end_recorded_at"] is None
+
+
+def test_duckdb_summary_accepts_filters() -> None:
+    csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{TRACKZEE_ROW}\n".encode()
+
+    upload_response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert upload_response.status_code == 201
+    stored_filename = upload_response.json()["stored_filename"]
+
+    prepare_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/prepare-transform"
+    )
+    assert prepare_response.status_code == 200
+
+    transform_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/run-transform"
+    )
+    assert transform_response.status_code == 200
+
+    analytics_response = client.get(
+        f"/api/v1/analytics/telemetry/{stored_filename}/summary",
+        params={"vehicle_registration": "BCA 4676 (COMPANY)"},
+    )
+
+    assert analytics_response.status_code == 200
+    body = analytics_response.json()
+    assert body["row_count"] == 1
+    assert body["distinct_vehicle_count"] == 1
+    assert body["vehicle_registration"] == "BCA 4676 (COMPANY)"
+
+
+def test_duckdb_summary_rejects_missing_file() -> None:
+    response = client.get("/api/v1/analytics/telemetry/missing.csv/summary")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Curated upload not found."
 
 
 def test_upload_rejects_non_csv_extension() -> None:
