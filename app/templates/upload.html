@@ -54,7 +54,37 @@
             </div>
           </div>
           <p id="message"></p>
-          <pre id="result" hidden></pre>
+          <section id="upload-results" class="results" hidden>
+            <div class="results-grid">
+              <section class="result-card">
+                <h2>Upload summary</h2>
+                <dl id="upload-summary" class="summary-list"></dl>
+              </section>
+              <section class="result-card">
+                <h2>Sanity check</h2>
+          <div id="upload-warnings" class="warning-list"></div>
+          <div class="action-row">
+            <button id="prepare-transform-button" type="button" hidden>Mark ready for transform</button>
+            <button id="run-transform-button" type="button" hidden>Run transform</button>
+            <a id="download-processed-link" class="ghost-link" href="#" hidden>Download curated output</a>
+          </div>
+        </section>
+            </div>
+            <section class="result-card">
+              <h2>Preview rows</h2>
+              <p class="schema-note">
+                Showing the first few rows using the most useful telemetry columns for a quick review.
+              </p>
+              <div id="preview-table-wrapper"></div>
+            </section>
+            <section id="duplicate-diagnostics-card" class="result-card" hidden>
+              <h2>Duplicate diagnostics</h2>
+              <p class="schema-note">
+                Rows listed here were dropped during transform because they matched an earlier telemetry event in the same upload.
+              </p>
+              <div id="duplicate-diagnostics-list" class="diagnostic-list"></div>
+            </section>
+          </section>
         </div>
         <aside class="sidebar">
           <div>
@@ -65,6 +95,13 @@
               <span class="badge optional">Optional value</span>
             </div>
             <div class="group-grid">__FIELD_GUIDE_HTML__</div>
+          </div>
+          <div class="result-card">
+            <h2>Recent ingestion runs</h2>
+            <p class="schema-note">Recent uploads saved in the metadata store. Use this to confirm what was ingested and whether warnings were raised.</p>
+            <div id="upload-history" class="history-list">
+              <div class="history-empty">No uploads have been recorded yet.</div>
+            </div>
           </div>
         </aside>
       </section>

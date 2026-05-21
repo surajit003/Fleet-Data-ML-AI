@@ -30,11 +30,16 @@ TRACKZEE_ROW = (
 @pytest.fixture(autouse=True)
 def clean_upload_dir() -> Iterator[None]:
     upload_dir = Path("data/raw/uploads")
+    metadata_dir = Path("data/metadata")
     if upload_dir.exists():
         shutil.rmtree(upload_dir)
+    if metadata_dir.exists():
+        shutil.rmtree(metadata_dir)
     yield
     if upload_dir.exists():
         shutil.rmtree(upload_dir)
+    if metadata_dir.exists():
+        shutil.rmtree(metadata_dir)
 
 
 def test_upload_telemetry_csv_returns_created() -> None:
@@ -48,11 +53,250 @@ def test_upload_telemetry_csv_returns_created() -> None:
     assert response.status_code == 201
     body = response.json()
     assert body["filename"] == "telemetry_upload.csv"
+    assert body["status"] == "validated"
     assert body["content_type"] == "text/csv"
     assert body["size_bytes"] == len(csv_bytes)
     assert body["row_count"] == 1
-    assert body["accepted_columns"][0] == "fetched_at"
-    assert body["mapped_fields"]["Imeino"] == "device_imei"
+    assert body["sanity_summary"]["preview_columns"][0] == "Datetime"
+    assert body["sanity_summary"]["preview_rows"][0]["values"]["Vehicle_No"] == "BCA 4676 (COMPANY)"
+    assert body["sanity_summary"]["unique_vehicle_count"] == 1
+    assert body["sanity_summary"]["warnings"] == []
+
+
+def test_upload_reports_blank_required_values() -> None:
+    invalid_required_row = TRACKZEE_ROW.replace("BCA 4676 (COMPANY)", "", 1)
+    csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{invalid_required_row}\n".encode()
+
+    response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert "1 required columns contain blank values." in body["sanity_summary"]["warnings"]
+    assert body["sanity_summary"]["required_value_issues"] == [
+        {
+            "column": "Vehicle_No",
+            "issue": "Required values were blank.",
+            "affected_rows": 1,
+        }
+    ]
+
+
+def test_upload_history_returns_recent_uploads() -> None:
+    csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{TRACKZEE_ROW}\n".encode()
+
+    upload_response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert upload_response.status_code == 201
+
+    history_response = client.get("/api/v1/uploads/history")
+
+    assert history_response.status_code == 200
+    body = history_response.json()
+    assert len(body["uploads"]) == 1
+    assert body["uploads"][0]["status"] == "validated"
+    assert body["uploads"][0]["original_filename"] == "telemetry_upload.csv"
+    assert body["uploads"][0]["row_count"] == 1
+    assert body["uploads"][0]["warning_count"] == 0
+
+
+def test_upload_detail_returns_saved_sanity_summary() -> None:
+    csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{TRACKZEE_ROW}\n".encode()
+
+    upload_response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert upload_response.status_code == 201
+    stored_filename = upload_response.json()["stored_filename"]
+
+    detail_response = client.get(f"/api/v1/uploads/history/{stored_filename}")
+
+    assert detail_response.status_code == 200
+    body = detail_response.json()
+    assert body["upload"]["status"] == "validated"
+    assert body["upload"]["stored_filename"] == stored_filename
+    assert body["sanity_summary"]["preview_rows"][0]["values"]["Vehicle_Name"] == "BCA 4676"
+    assert body["sanity_summary"]["warnings"] == []
+
+
+def test_upload_history_marks_warning_status() -> None:
+    invalid_required_row = TRACKZEE_ROW.replace("BCA 4676 (COMPANY)", "", 1)
+    csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{invalid_required_row}\n".encode()
+
+    upload_response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert upload_response.status_code == 201
+
+    history_response = client.get("/api/v1/uploads/history")
+
+    assert history_response.status_code == 200
+    body = history_response.json()
+    assert body["uploads"][0]["status"] == "validated_with_warnings"
+
+
+def test_prepare_transform_updates_upload_status() -> None:
+    csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{TRACKZEE_ROW}\n".encode()
+
+    upload_response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert upload_response.status_code == 201
+    stored_filename = upload_response.json()["stored_filename"]
+
+    prepare_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/prepare-transform"
+    )
+
+    assert prepare_response.status_code == 200
+    body = prepare_response.json()
+    assert body["upload"]["status"] == "ready_for_transform"
+
+    history_response = client.get("/api/v1/uploads/history")
+    assert history_response.status_code == 200
+    assert history_response.json()["uploads"][0]["status"] == "ready_for_transform"
+
+
+def test_run_transform_updates_status_and_artifact_metadata() -> None:
+    csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{TRACKZEE_ROW}\n".encode()
+
+    upload_response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert upload_response.status_code == 201
+    stored_filename = upload_response.json()["stored_filename"]
+
+    prepare_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/prepare-transform"
+    )
+    assert prepare_response.status_code == 200
+
+    transform_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/run-transform"
+    )
+
+    assert transform_response.status_code == 200
+    body = transform_response.json()
+    assert body["upload"]["status"] == "transformed"
+    assert body["upload"]["transformed_row_count"] == 1
+    assert body["upload"]["duplicate_row_count"] == 0
+    assert body["upload"]["processed_path"] is not None
+    assert body["upload"]["processed_path"].endswith(f"curated_{stored_filename}")
+
+
+def test_run_transform_skips_duplicate_rows() -> None:
+    duplicate_csv = f"{REQUIRED_TELEMETRY_HEADER}\n{TRACKZEE_ROW}\n{TRACKZEE_ROW}\n".encode()
+
+    upload_response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", duplicate_csv, "text/csv")},
+    )
+
+    assert upload_response.status_code == 201
+    stored_filename = upload_response.json()["stored_filename"]
+
+    prepare_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/prepare-transform"
+    )
+    assert prepare_response.status_code == 200
+
+    transform_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/run-transform"
+    )
+
+    assert transform_response.status_code == 200
+    body = transform_response.json()
+    assert body["upload"]["transformed_row_count"] == 1
+    assert body["upload"]["duplicate_row_count"] == 1
+    assert body["duplicate_diagnostics"] == [
+        {
+            "row_number": 3,
+            "duplicate_of_row_number": 2,
+            "duplicate_key": "353201358287644 | 2026-04-29T16:49:50",
+            "device_imei": "353201358287644",
+            "vehicle_registration": "BCA 4676 (COMPANY)",
+            "recorded_at": "2026-04-29T16:49:50",
+            "reason": "Matched a previously seen telemetry event using device and timestamp.",
+        }
+    ]
+
+    detail_response = client.get(f"/api/v1/uploads/history/{stored_filename}")
+    assert detail_response.status_code == 200
+    detail_body = detail_response.json()
+    assert detail_body["duplicate_diagnostics"] == body["duplicate_diagnostics"]
+
+
+def test_transform_uses_default_exact_event_duplicate_strategy() -> None:
+    csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{TRACKZEE_ROW}\n{TRACKZEE_ROW}\n".encode()
+
+    upload_response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert upload_response.status_code == 201
+    stored_filename = upload_response.json()["stored_filename"]
+
+    prepare_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/prepare-transform"
+    )
+    assert prepare_response.status_code == 200
+
+    transform_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/run-transform"
+    )
+
+    assert transform_response.status_code == 200
+    body = transform_response.json()
+    assert body["upload"]["duplicate_row_count"] == 1
+    assert (
+        body["duplicate_diagnostics"][0]["reason"]
+        == "Matched a previously seen telemetry event using device and timestamp."
+    )
+
+
+def test_processed_artifact_download_returns_curated_file() -> None:
+    csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{TRACKZEE_ROW}\n".encode()
+
+    upload_response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert upload_response.status_code == 201
+    stored_filename = upload_response.json()["stored_filename"]
+
+    prepare_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/prepare-transform"
+    )
+    assert prepare_response.status_code == 200
+
+    transform_response = client.post(
+        f"/api/v1/uploads/history/{stored_filename}/run-transform"
+    )
+    assert transform_response.status_code == 200
+
+    artifact_response = client.get(
+        f"/api/v1/uploads/history/{stored_filename}/processed-artifact"
+    )
+
+    assert artifact_response.status_code == 200
+    assert artifact_response.headers["content-type"].startswith("text/csv")
+    assert "device_imei" in artifact_response.text
+    assert "vehicle_registration" in artifact_response.text
 
 
 def test_upload_rejects_non_csv_extension() -> None:

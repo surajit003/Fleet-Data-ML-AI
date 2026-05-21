@@ -7,6 +7,7 @@ __pycache__/
 .mypy_cache/
 .env
 data/raw/
+data/metadata/
 data/processed/
 *.pyc
 *.log

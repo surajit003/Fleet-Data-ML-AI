@@ -12,6 +12,9 @@ from app.api.v1.endpoints.uploads import ui_router as uploads_ui_router
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
+from app.infrastructure.repositories.sqlite_upload_audit_repository import (
+    initialize_upload_metadata_database,
+)
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -19,6 +22,7 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    initialize_upload_metadata_database(settings.upload_metadata_db_path)
     logger = get_logger().bind(
         service=settings.app_name,
         version=settings.app_version,

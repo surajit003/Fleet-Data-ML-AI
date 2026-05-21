@@ -17,6 +17,14 @@ def test_upload_page_renders_form() -> None:
     assert "Time and Source" in response.text
     assert "Vehicle Identity" in response.text
     assert "Device IMEI or hardware identifier." in response.text
+    assert "Upload summary" in response.text
+    assert "Sanity check" in response.text
+    assert "Preview rows" in response.text
+    assert "Recent ingestion runs" in response.text
+    assert "upload-history" in response.text
+    assert "run-transform-button" in response.text
+    assert "download-processed-link" in response.text
+    assert "duplicate-diagnostics-list" in response.text
     assert 'type="file"' in response.text
     assert '/static/upload/upload.css' in response.text
     assert '/static/upload/upload.js' in response.text

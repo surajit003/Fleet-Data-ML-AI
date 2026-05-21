@@ -137,6 +137,20 @@ OPTIONAL_VALUE_COLUMNS: frozenset[str] = frozenset(
     }
 )
 
+REQUIRED_VALUE_COLUMNS: frozenset[str] = frozenset(
+    column for column in REQUIRED_TELEMETRY_COLUMNS if column not in OPTIONAL_VALUE_COLUMNS
+)
+
+TELEMETRY_PREVIEW_COLUMNS: tuple[str, ...] = (
+    "Datetime",
+    "Vehicle_No",
+    "Vehicle_Name",
+    "Status",
+    "Speed",
+    "Latitude",
+    "Longitude",
+)
+
 TELEMETRY_FIELD_DESCRIPTIONS: dict[str, str] = {
     "fetched_at": "Source fetch timestamp for the row.",
     "Imeino": "Device IMEI or hardware identifier.",

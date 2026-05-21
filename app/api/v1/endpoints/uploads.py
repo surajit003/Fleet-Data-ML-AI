@@ -2,22 +2,42 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
+from app.application.services.telemetry_transform_service import TelemetryTransformService
 from app.application.services.telemetry_upload_service import TelemetryUploadService
 from app.core.config import Settings, get_settings
 from app.domain.entities.telemetry_upload_payload import TelemetryUploadPayload
 from app.domain.exceptions import InvalidTelemetryUploadError
+from app.domain.repositories.upload_audit_repository import UploadAuditRepository
 from app.domain.repositories.upload_storage_repository import UploadStorageRepository
 from app.domain.telemetry_schema import (
     REQUIRED_TELEMETRY_COLUMNS,
     SAMPLE_TELEMETRY_ROW,
     TELEMETRY_FIELD_GUIDE,
 )
+from app.domain.upload_status import (
+    STATUS_READY_FOR_TRANSFORM,
+    can_prepare_for_transform,
+    can_run_transform,
+    derive_validation_status,
+)
 from app.infrastructure.repositories.local_upload_storage_repository import (
     LocalUploadStorageRepository,
 )
-from app.schemas.uploads import TelemetryUploadResponse
+from app.infrastructure.repositories.sqlite_upload_audit_repository import (
+    SqliteUploadAuditRepository,
+)
+from app.schemas.uploads import (
+    DuplicateRowDiagnosticResponse,
+    TelemetryColumnIssue,
+    TelemetryPreviewRow,
+    TelemetrySanitySummary,
+    TelemetryUploadResponse,
+    UploadAuditRecordResponse,
+    UploadDetailResponse,
+    UploadHistoryResponse,
+)
 
 router = APIRouter(prefix="/uploads")
 ui_router = APIRouter()
@@ -37,11 +57,37 @@ UploadStorageRepositoryDep = Annotated[
 ]
 
 
+def get_upload_audit_repository(settings: SettingsDep) -> UploadAuditRepository:
+    return SqliteUploadAuditRepository(database_path=settings.upload_metadata_db_path)
+
+
+UploadAuditRepositoryDep = Annotated[
+    UploadAuditRepository,
+    Depends(get_upload_audit_repository),
+]
+
+
+def get_telemetry_transform_service(settings: SettingsDep) -> TelemetryTransformService:
+    return TelemetryTransformService(
+        raw_storage_dir=settings.upload_storage_dir,
+        processed_storage_dir=settings.processed_storage_dir,
+        duplicate_strategy=settings.duplicate_strategy,
+    )
+
+
+TelemetryTransformServiceDep = Annotated[
+    TelemetryTransformService,
+    Depends(get_telemetry_transform_service),
+]
+
+
 def get_telemetry_upload_service(
     settings: SettingsDep,
+    audit_repository: UploadAuditRepositoryDep,
     repository: UploadStorageRepositoryDep,
 ) -> TelemetryUploadService:
     return TelemetryUploadService(
+        audit_repository=audit_repository,
         storage_repository=repository,
         max_upload_size_bytes=settings.max_upload_size_bytes,
     )
@@ -93,6 +139,66 @@ def _render_upload_page(app_name: str, api_prefix: str) -> str:
     )
 
 
+def _to_upload_audit_record_response(upload: object) -> UploadAuditRecordResponse:
+    return UploadAuditRecordResponse(
+        status=upload.status,
+        stored_filename=upload.stored_filename,
+        original_filename=upload.original_filename,
+        content_type=upload.content_type,
+        size_bytes=upload.size_bytes,
+        row_count=upload.row_count,
+        unique_vehicle_count=upload.unique_vehicle_count,
+        warning_count=upload.warning_count,
+        warnings=list(upload.warnings),
+        first_recorded_at=upload.first_recorded_at,
+        last_recorded_at=upload.last_recorded_at,
+        processed_path=upload.processed_path,
+        transformed_row_count=upload.transformed_row_count,
+        duplicate_row_count=upload.duplicate_row_count,
+        transformed_at=upload.transformed_at,
+        created_at=upload.created_at,
+    )
+
+
+def _to_sanity_summary_response(sanity_summary: object) -> TelemetrySanitySummary:
+    return TelemetrySanitySummary(
+        preview_columns=list(sanity_summary.preview_columns),
+        preview_rows=[
+            TelemetryPreviewRow(row_number=row.row_number, values=row.values)
+            for row in sanity_summary.preview_rows
+        ],
+        warnings=list(sanity_summary.warnings),
+        required_value_issues=[
+            TelemetryColumnIssue(
+                column=issue.column,
+                issue=issue.issue,
+                affected_rows=issue.affected_rows,
+            )
+            for issue in sanity_summary.required_value_issues
+        ],
+        unique_vehicle_count=sanity_summary.unique_vehicle_count,
+        first_recorded_at=sanity_summary.first_recorded_at,
+        last_recorded_at=sanity_summary.last_recorded_at,
+    )
+
+
+def _to_duplicate_diagnostics_response(
+    duplicate_diagnostics: tuple[object, ...],
+) -> list[DuplicateRowDiagnosticResponse]:
+    return [
+        DuplicateRowDiagnosticResponse(
+            row_number=item.row_number,
+            duplicate_of_row_number=item.duplicate_of_row_number,
+            duplicate_key=item.duplicate_key,
+            device_imei=item.device_imei,
+            vehicle_registration=item.vehicle_registration,
+            recorded_at=item.recorded_at,
+            reason=item.reason,
+        )
+        for item in duplicate_diagnostics
+    ]
+
+
 @ui_router.get("/upload", response_class=HTMLResponse, tags=["ui"])
 def read_upload_page(app_settings: SettingsDep) -> str:
     return _render_upload_page(
@@ -114,6 +220,129 @@ def download_sample_csv() -> Response:
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="telemetry-sample.csv"'},
     )
+
+
+@router.get("/history", response_model=UploadHistoryResponse)
+def read_upload_history(
+    repository: UploadAuditRepositoryDep,
+) -> UploadHistoryResponse:
+    uploads = repository.list_recent_uploads()
+    return UploadHistoryResponse(
+        uploads=[_to_upload_audit_record_response(upload) for upload in uploads]
+    )
+
+
+@router.get("/history/{stored_filename}", response_model=UploadDetailResponse)
+def read_upload_detail(
+    stored_filename: str,
+    repository: UploadAuditRepositoryDep,
+) -> UploadDetailResponse:
+    detail = repository.get_upload_detail(stored_filename)
+    if detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found.")
+
+    return UploadDetailResponse(
+        upload=_to_upload_audit_record_response(detail.upload),
+        sanity_summary=_to_sanity_summary_response(detail.sanity_summary),
+        duplicate_diagnostics=_to_duplicate_diagnostics_response(
+            detail.duplicate_diagnostics
+        ),
+    )
+
+
+@router.post("/history/{stored_filename}/prepare-transform", response_model=UploadDetailResponse)
+def prepare_upload_for_transform(
+    stored_filename: str,
+    repository: UploadAuditRepositoryDep,
+) -> UploadDetailResponse:
+    detail = repository.get_upload_detail(stored_filename)
+    if detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found.")
+    if not can_prepare_for_transform(detail.upload.status):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upload is not in a state that can be prepared for transform.",
+        )
+
+    updated_detail = repository.update_upload_status(stored_filename, STATUS_READY_FOR_TRANSFORM)
+    if updated_detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found.")
+
+    return UploadDetailResponse(
+        upload=_to_upload_audit_record_response(updated_detail.upload),
+        sanity_summary=_to_sanity_summary_response(updated_detail.sanity_summary),
+        duplicate_diagnostics=_to_duplicate_diagnostics_response(
+            updated_detail.duplicate_diagnostics
+        ),
+    )
+
+
+@router.post("/history/{stored_filename}/run-transform", response_model=UploadDetailResponse)
+def run_transform_for_upload(
+    stored_filename: str,
+    repository: UploadAuditRepositoryDep,
+    transform_service: TelemetryTransformServiceDep,
+) -> UploadDetailResponse:
+    detail = repository.get_upload_detail(stored_filename)
+    if detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found.")
+    if not can_run_transform(detail.upload.status):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upload is not ready to run transform.",
+        )
+
+    try:
+        result = transform_service.transform_upload(stored_filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Raw upload file could not be found for transform.",
+        ) from exc
+
+    updated_detail = repository.mark_upload_transformed(
+        stored_filename=stored_filename,
+        processed_path=result.processed_path,
+        transformed_row_count=result.row_count,
+        duplicate_row_count=result.duplicate_row_count,
+        duplicate_diagnostics=result.duplicate_diagnostics,
+    )
+    if updated_detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found.")
+
+    return UploadDetailResponse(
+        upload=_to_upload_audit_record_response(updated_detail.upload),
+        sanity_summary=_to_sanity_summary_response(updated_detail.sanity_summary),
+        duplicate_diagnostics=_to_duplicate_diagnostics_response(
+            updated_detail.duplicate_diagnostics
+        ),
+    )
+
+
+@router.get("/history/{stored_filename}/processed-artifact")
+def download_processed_artifact(
+    stored_filename: str,
+    repository: UploadAuditRepositoryDep,
+) -> FileResponse:
+    detail = repository.get_upload_detail(stored_filename)
+    if detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found.")
+
+    processed_path = detail.upload.processed_path
+    if not processed_path:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upload does not have a processed artifact yet.",
+        )
+
+    path = Path(processed_path)
+    if not path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Processed artifact could not be found.",
+        )
+
+    return FileResponse(path, media_type="text/csv", filename=path.name)
 
 
 @router.post(
@@ -142,11 +371,11 @@ async def upload_telemetry_csv(
         await file.close()
 
     return TelemetryUploadResponse(
+        status=derive_validation_status(result.sanity_summary),
         filename=result.upload.original_filename,
         stored_filename=result.upload.stored_filename,
         content_type=result.upload.content_type,
         size_bytes=result.upload.size_bytes,
         row_count=result.upload.row_count,
-        accepted_columns=list(REQUIRED_TELEMETRY_COLUMNS),
-        mapped_fields=result.mapped_fields,
+        sanity_summary=_to_sanity_summary_response(result.sanity_summary),
     )
