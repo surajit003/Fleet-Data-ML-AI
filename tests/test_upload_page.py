@@ -25,6 +25,7 @@ def test_upload_page_renders_form() -> None:
     assert "run-transform-button" in response.text
     assert "download-processed-link" in response.text
     assert "duplicate-diagnostics-list" in response.text
+    assert 'id="api-key"' in response.text
     assert 'type="file"' in response.text
     assert '/static/upload/upload.css' in response.text
     assert '/static/upload/upload.js' in response.text

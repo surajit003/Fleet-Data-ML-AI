@@ -92,6 +92,26 @@ def test_upload_telemetry_csv_requires_api_key_when_configured(
     get_settings.cache_clear()
 
 
+def test_upload_telemetry_csv_rejects_before_body_parsing_when_unauthorized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("API_KEY", "test-secret")
+    get_settings.cache_clear()
+
+    response = client.request(
+        "POST",
+        "/api/v1/uploads/telemetry",
+        content=b"not-a-multipart-body",
+        headers={"Content-Type": "text/plain"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid or missing API key."
+
+    monkeypatch.delenv("API_KEY", raising=False)
+    get_settings.cache_clear()
+
+
 def test_upload_reports_blank_required_values() -> None:
     invalid_required_row = TRACKZEE_ROW.replace("BCA 4676 (COMPANY)", "", 1)
     csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{invalid_required_row}\n".encode()

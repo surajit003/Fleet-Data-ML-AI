@@ -15,6 +15,7 @@ from app.core.logging import configure_logging, get_logger
 from app.infrastructure.repositories.sqlite_upload_audit_repository import (
     initialize_upload_metadata_database,
 )
+from app.middleware.upload_auth import enforce_upload_api_key
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         lifespan=lifespan,
     )
+    app.middleware("http")(enforce_upload_api_key)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     app.include_router(uploads_ui_router)
     app.include_router(api_router, prefix=settings.api_v1_prefix)

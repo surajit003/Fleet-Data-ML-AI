@@ -1,5 +1,6 @@
 const form = document.getElementById("upload-form");
 const input = document.getElementById("telemetry-file");
+const apiKeyInput = document.getElementById("api-key");
 const message = document.getElementById("message");
 const results = document.getElementById("upload-results");
 const summary = document.getElementById("upload-summary");
@@ -253,8 +254,14 @@ if (form && input && message && results && summary && warnings && previewTableWr
     results.hidden = true;
 
     const apiPrefix = window.telemetryUploadConfig?.apiPrefix ?? "/api/v1";
+    const apiKey = apiKeyInput instanceof HTMLInputElement ? apiKeyInput.value.trim() : "";
+    const uploadHeaders = {};
+    if (apiKey) {
+      uploadHeaders["X-API-Key"] = apiKey;
+    }
     const response = await fetch(`${apiPrefix}/uploads/telemetry`, {
       method: "POST",
+      headers: uploadHeaders,
       body: formData,
     });
     const data = await response.json();
