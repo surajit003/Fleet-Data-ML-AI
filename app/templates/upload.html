@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>__APP_NAME__ Upload</title>
+    <link rel="stylesheet" href="/static/upload/upload.css" />
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div>
+          <p class="status">Telemetry Intake</p>
+          <h1>Upload Telemetry Data</h1>
+          <p>
+            Prepare a CSV that matches the ingestion schema exactly, then upload it here.
+            Column names and column order are fixed. Some fields may have blank values, but
+            every column listed in the schema must still be present in the file.
+          </p>
+        </div>
+        <div class="actions">
+          <button form="upload-form" type="submit">Upload telemetry</button>
+          <a class="ghost-link" href="/upload/sample">Download sample CSV</a>
+        </div>
+      </section>
+      <section class="layout">
+        <div class="panel">
+          <h2>Upload file</h2>
+          <p>Select a CSV up to 2 MB. Use the sample file if you need a valid starting point.</p>
+          <form id="upload-form">
+            <div class="panel">
+              <input id="telemetry-file" name="file" type="file" accept=".csv,text/csv" required />
+            </div>
+          </form>
+          <div class="callouts">
+            <div class="callout">
+              <strong>Start with the sample</strong>
+              <p class="schema-note">
+                Do not build the header manually. Download the sample CSV and replace the example row values with your own data.
+              </p>
+            </div>
+            <div class="callout">
+              <strong>How the schema is organized</strong>
+              <p class="schema-note">
+                The ingestion format is grouped into 5 smaller sections so it is easier to scan. Keep every column in place, even when some values are blank.
+              </p>
+            </div>
+            <div class="callout">
+              <strong>Value rule</strong>
+              <p class="schema-note">
+                Fields marked <span class="badge required">Required value</span> should not be blank.
+                Fields marked <span class="badge optional">Optional value</span> may be left blank when the source does not provide them.
+              </p>
+            </div>
+          </div>
+          <p id="message"></p>
+          <pre id="result" hidden></pre>
+        </div>
+        <aside class="sidebar">
+          <div>
+            <h2>Schema guide</h2>
+            <p class="schema-note">Review the section that matches the data you are preparing instead of parsing the full file all at once.</p>
+            <div class="legend">
+              <span class="badge required">Required value</span>
+              <span class="badge optional">Optional value</span>
+            </div>
+            <div class="group-grid">__FIELD_GUIDE_HTML__</div>
+          </div>
+        </aside>
+      </section>
+    </main>
+    <script src="/static/upload/upload.js"></script>
+    <script>
+      window.telemetryUploadConfig = { apiPrefix: "__API_PREFIX__" };
+    </script>
+  </body>
+</html>

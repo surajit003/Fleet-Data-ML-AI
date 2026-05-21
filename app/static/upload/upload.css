@@ -1,0 +1,260 @@
+:root {
+  color-scheme: light;
+  --bg: #f4efe4;
+  --panel: #fffaf0;
+  --ink: #1f2a37;
+  --muted: #52606d;
+  --accent: #0f766e;
+  --accent-dark: #115e59;
+  --accent-soft: rgba(15, 118, 110, 0.12);
+  --gold: #a16207;
+  --gold-soft: rgba(161, 98, 7, 0.12);
+  --border: #d9cdb8;
+  --error: #b42318;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Georgia, "Times New Roman", serif;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.14), transparent 30%),
+    linear-gradient(180deg, #f6f1e8 0%, var(--bg) 100%);
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+main {
+  width: min(1040px, 100%);
+  background: rgba(255, 250, 240, 0.94);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 32px;
+  box-shadow: 0 24px 48px rgba(31, 42, 55, 0.08);
+}
+
+.hero {
+  display: grid;
+  gap: 18px;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  line-height: 1;
+}
+
+p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+form {
+  margin-top: 8px;
+  display: grid;
+  gap: 16px;
+}
+
+.layout {
+  display: grid;
+  gap: 24px;
+  margin-top: 28px;
+}
+
+@media (min-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+    align-items: start;
+  }
+}
+
+.panel {
+  border: 1px dashed var(--border);
+  border-radius: 18px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.panel h2,
+.sidebar h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.panel p:last-child {
+  margin-bottom: 0;
+}
+
+input[type="file"] {
+  width: 100%;
+}
+
+button {
+  width: fit-content;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  padding: 12px 18px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--accent-dark);
+}
+
+pre {
+  margin: 0;
+  padding: 16px;
+  border-radius: 16px;
+  background: #12212b;
+  color: #d7f9f5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.status {
+  font-weight: 700;
+}
+
+.error {
+  color: var(--error);
+}
+
+.callouts {
+  display: grid;
+  gap: 12px;
+}
+
+.callout {
+  border-radius: 18px;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--border);
+}
+
+.callout strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.ghost-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 11px 16px;
+  border: 1px solid var(--border);
+  color: var(--ink);
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.ghost-link:hover {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.badge.required {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.badge.optional {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.sidebar {
+  display: grid;
+  gap: 18px;
+}
+
+.group-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.group-card {
+  display: grid;
+  gap: 12px;
+}
+
+.group-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.field-guide {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.field-guide li {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 14px 16px;
+}
+
+.field-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.field-guide p {
+  margin-bottom: 8px;
+}
+
+.field-guide small {
+  color: var(--muted);
+}
+
+.schema-note {
+  margin: 0;
+  font-size: 0.94rem;
+}

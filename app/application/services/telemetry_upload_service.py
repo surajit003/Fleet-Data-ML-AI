@@ -6,7 +6,10 @@ from app.domain.entities.telemetry_upload import TelemetryUpload
 from app.domain.entities.telemetry_upload_payload import TelemetryUploadPayload
 from app.domain.exceptions import InvalidTelemetryUploadError
 from app.domain.repositories.upload_storage_repository import UploadStorageRepository
-from app.domain.telemetry_schema import TRACKZEE_TO_DOMAIN_FIELD_MAP, validate_trackzee_header
+from app.domain.telemetry_schema import (
+    TELEMETRY_TO_DOMAIN_FIELD_MAP,
+    validate_telemetry_header,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +32,7 @@ class TelemetryUploadService:
         self._validate_size(payload.content)
 
         header, row_count = self._parse_csv(payload.content)
-        validate_trackzee_header(header)
+        validate_telemetry_header(header)
 
         upload = self._storage_repository.save_telemetry_csv(
             original_filename=payload.filename,
@@ -39,7 +42,7 @@ class TelemetryUploadService:
         )
         return ValidatedTelemetryUpload(
             upload=upload,
-            mapped_fields=TRACKZEE_TO_DOMAIN_FIELD_MAP,
+            mapped_fields=TELEMETRY_TO_DOMAIN_FIELD_MAP,
         )
 
     def _validate_filename(self, filename: str) -> None:

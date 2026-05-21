@@ -1,6 +1,17 @@
+from dataclasses import dataclass
+
 from app.domain.exceptions import InvalidTelemetryUploadError
 
-TRACKZEE_COLUMNS: tuple[str, ...] = (
+
+@dataclass(frozen=True, slots=True)
+class TelemetryFieldGuide:
+    column: str
+    domain_field: str
+    group: str
+    value_requirement: str
+    description: str
+
+REQUIRED_TELEMETRY_COLUMNS: tuple[str, ...] = (
     "fetched_at",
     "Imeino",
     "Vehicle_No",
@@ -52,7 +63,7 @@ TRACKZEE_COLUMNS: tuple[str, ...] = (
     "Altitude",
 )
 
-TRACKZEE_TO_DOMAIN_FIELD_MAP: dict[str, str] = {
+TELEMETRY_TO_DOMAIN_FIELD_MAP: dict[str, str] = {
     "fetched_at": "fetched_at",
     "Imeino": "device_imei",
     "Vehicle_No": "vehicle_registration",
@@ -104,9 +115,200 @@ TRACKZEE_TO_DOMAIN_FIELD_MAP: dict[str, str] = {
     "Altitude": "altitude",
 }
 
+OPTIONAL_VALUE_COLUMNS: frozenset[str] = frozenset(
+    {
+        "POI",
+        "Temperature",
+        "Fuel",
+        "AC",
+        "SOS",
+        "Immobilize_State",
+        "Door1",
+        "Door2",
+        "Door3",
+        "Door4",
+        "elock",
+        "Driver_First_Name",
+        "Driver_Middle_Name",
+        "Driver_Last_Name",
+        "Ibutton/RFID",
+        "Vin",
+        "Altitude",
+    }
+)
 
-def validate_trackzee_header(header: list[str]) -> None:
-    if tuple(header) != TRACKZEE_COLUMNS:
+TELEMETRY_FIELD_DESCRIPTIONS: dict[str, str] = {
+    "fetched_at": "Source fetch timestamp for the row.",
+    "Imeino": "Device IMEI or hardware identifier.",
+    "Vehicle_No": "Vehicle registration or plate number.",
+    "Vehicle_Name": "Friendly vehicle label shown in the source system.",
+    "Company": "Owning company or fleet name.",
+    "Branch": "Branch, depot, or operating unit.",
+    "Vehicletype": "Vehicle category such as truck or van.",
+    "DeviceModel": "Installed tracker model.",
+    "Status": "Vehicle movement or operational state.",
+    "Power": "Main power state reported by the device.",
+    "IGN": "Ignition state.",
+    "GPS": "GPS availability or fix state.",
+    "Speed": "Vehicle speed reading.",
+    "Angle": "Heading angle value.",
+    "course": "Course or compass direction.",
+    "Odometer": "Distance reading from the device.",
+    "can_odometer": "CAN bus odometer reading when available.",
+    "Latitude": "Latitude coordinate.",
+    "Longitude": "Longitude coordinate.",
+    "Location": "Human-readable location text.",
+    "POI": "Point of interest label when available.",
+    "GPSActualTime": "Timestamp from the GPS signal.",
+    "Datetime": "Primary event timestamp for ingestion.",
+    "Temperature": "Temperature sensor reading if present.",
+    "ExternalVolt": "External voltage reading.",
+    "battery_percentage": "Battery percentage reported by the device.",
+    "satellite_count": "Number of GPS satellites in use.",
+    "gps_hdop": "Horizontal dilution of precision.",
+    "Fuel": "Fuel level reading if present.",
+    "AC": "Air conditioning state if tracked.",
+    "SOS": "SOS state if tracked.",
+    "Immobilize_State": "Immobilizer state if tracked.",
+    "Door1": "First door sensor state if tracked.",
+    "Door2": "Second door sensor state if tracked.",
+    "Door3": "Third door sensor state if tracked.",
+    "Door4": "Fourth door sensor state if tracked.",
+    "elock": "Electronic lock state if tracked.",
+    "Driver_First_Name": "Driver first name if assigned.",
+    "Driver_Middle_Name": "Driver middle name if assigned.",
+    "Driver_Last_Name": "Driver last name if assigned.",
+    "Ibutton/RFID": "Driver tag, iButton, or RFID identifier.",
+    "Vin": "Vehicle identification number.",
+    "mcc": "Mobile country code from the tracker network.",
+    "mnc": "Mobile network code from the tracker network.",
+    "cellid": "Serving cell tower identifier.",
+    "lac": "Location area code from the mobile network.",
+    "heartbeat": "Heartbeat or keepalive flag.",
+    "username": "Source account or integration username.",
+    "Altitude": "Altitude reading if present.",
+}
+
+TELEMETRY_FIELD_GROUPS: dict[str, str] = {
+    "fetched_at": "Time and Source",
+    "Imeino": "Time and Source",
+    "username": "Time and Source",
+    "GPSActualTime": "Time and Source",
+    "Datetime": "Time and Source",
+    "heartbeat": "Time and Source",
+    "Vehicle_No": "Vehicle Identity",
+    "Vehicle_Name": "Vehicle Identity",
+    "Company": "Vehicle Identity",
+    "Branch": "Vehicle Identity",
+    "Vehicletype": "Vehicle Identity",
+    "DeviceModel": "Vehicle Identity",
+    "Vin": "Vehicle Identity",
+    "Status": "Motion and Position",
+    "Power": "Motion and Position",
+    "IGN": "Motion and Position",
+    "GPS": "Motion and Position",
+    "Speed": "Motion and Position",
+    "Angle": "Motion and Position",
+    "course": "Motion and Position",
+    "Latitude": "Motion and Position",
+    "Longitude": "Motion and Position",
+    "Location": "Motion and Position",
+    "POI": "Motion and Position",
+    "Altitude": "Motion and Position",
+    "Odometer": "Vehicle Metrics",
+    "can_odometer": "Vehicle Metrics",
+    "Temperature": "Vehicle Metrics",
+    "ExternalVolt": "Vehicle Metrics",
+    "battery_percentage": "Vehicle Metrics",
+    "satellite_count": "Vehicle Metrics",
+    "gps_hdop": "Vehicle Metrics",
+    "Fuel": "Vehicle Metrics",
+    "AC": "Driver and Safety",
+    "SOS": "Driver and Safety",
+    "Immobilize_State": "Driver and Safety",
+    "Door1": "Driver and Safety",
+    "Door2": "Driver and Safety",
+    "Door3": "Driver and Safety",
+    "Door4": "Driver and Safety",
+    "elock": "Driver and Safety",
+    "Driver_First_Name": "Driver and Safety",
+    "Driver_Middle_Name": "Driver and Safety",
+    "Driver_Last_Name": "Driver and Safety",
+    "Ibutton/RFID": "Driver and Safety",
+    "mcc": "Network",
+    "mnc": "Network",
+    "cellid": "Network",
+    "lac": "Network",
+}
+
+TELEMETRY_FIELD_GUIDE: tuple[TelemetryFieldGuide, ...] = tuple(
+    TelemetryFieldGuide(
+        column=column,
+        domain_field=TELEMETRY_TO_DOMAIN_FIELD_MAP[column],
+        group=TELEMETRY_FIELD_GROUPS[column],
+        value_requirement="Optional value"
+        if column in OPTIONAL_VALUE_COLUMNS
+        else "Required value",
+        description=TELEMETRY_FIELD_DESCRIPTIONS[column],
+    )
+    for column in REQUIRED_TELEMETRY_COLUMNS
+)
+
+SAMPLE_TELEMETRY_ROW: tuple[str, ...] = (
+    "2026-05-21T10:01:07",
+    "990000000000001",
+    "DEMO-0001",
+    "Demo Vehicle 0001",
+    "Demo Fleet",
+    "Branch-02",
+    "Truck",
+    "DEMO-TRACKER",
+    "MOVING",
+    "ON",
+    "ON",
+    "ON",
+    "45",
+    "13",
+    "17",
+    "100011",
+    "0",
+    "-1.100001",
+    "36.700003",
+    "Mock Yard 02",
+    "",
+    "2026-05-21T10:02:05",
+    "2026-05-21T10:02:05",
+    "21",
+    "12.1",
+    "61",
+    "9",
+    "0.3",
+    "36",
+    "OFF",
+    "OFF",
+    "OFF",
+    "CLOSED",
+    "CLOSED",
+    "CLOSED",
+    "CLOSED",
+    "OFF",
+    "Driver0001",
+    "Test",
+    "User",
+    "TAG-0001",
+    "VINDEMO00000001",
+    "640",
+    "2",
+    "20001",
+    "501",
+    "1",
+    "demo-user",
+    "1101",
+)
+
+
+def validate_telemetry_header(header: list[str]) -> None:
+    if tuple(header) != REQUIRED_TELEMETRY_COLUMNS:
         raise InvalidTelemetryUploadError(
-            "CSV header does not match the required Trackzee export format."
+            "CSV header does not match the required telemetry ingestion format."
         )
