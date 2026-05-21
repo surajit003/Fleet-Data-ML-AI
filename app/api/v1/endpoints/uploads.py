@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from app.application.services.telemetry_transform_service import TelemetryTransformService
@@ -101,6 +101,22 @@ TelemetryUploadServiceDep = Annotated[
     TelemetryUploadService,
     Depends(get_telemetry_upload_service),
 ]
+
+
+def require_upload_api_key(
+    settings: SettingsDep,
+    api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> None:
+    if settings.api_key is None:
+        return
+    if api_key != settings.api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key.",
+        )
+
+
+UploadApiKeyDep = Annotated[None, Depends(require_upload_api_key)]
 
 
 def _render_upload_page(app_name: str, api_prefix: str) -> str:
@@ -352,6 +368,7 @@ def download_processed_artifact(
 )
 async def upload_telemetry_csv(
     file: Annotated[UploadFile, File(...)],
+    _: UploadApiKeyDep,
     service: TelemetryUploadServiceDep,
 ) -> TelemetryUploadResponse:
     filename = file.filename or ""

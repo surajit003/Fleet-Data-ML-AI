@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import get_settings
 from app.main import app
 
 client = TestClient(app)
@@ -61,6 +62,34 @@ def test_upload_telemetry_csv_returns_created() -> None:
     assert body["sanity_summary"]["preview_rows"][0]["values"]["Vehicle_No"] == "BCA 4676 (COMPANY)"
     assert body["sanity_summary"]["unique_vehicle_count"] == 1
     assert body["sanity_summary"]["warnings"] == []
+
+
+def test_upload_telemetry_csv_requires_api_key_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("API_KEY", "test-secret")
+    get_settings.cache_clear()
+
+    csv_bytes = f"{REQUIRED_TELEMETRY_HEADER}\n{TRACKZEE_ROW}\n".encode()
+    response = client.post(
+        "/api/v1/uploads/telemetry",
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid or missing API key."
+
+    authorized_response = client.post(
+        "/api/v1/uploads/telemetry",
+        headers={"X-API-Key": "test-secret"},
+        files={"file": ("telemetry_upload.csv", csv_bytes, "text/csv")},
+    )
+
+    assert authorized_response.status_code == 201
+    assert authorized_response.json()["status"] == "validated"
+
+    monkeypatch.delenv("API_KEY", raising=False)
+    get_settings.cache_clear()
 
 
 def test_upload_reports_blank_required_values() -> None:

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: str = "local"
     api_v1_prefix: str = "/api/v1"
+    api_key: str | None = None
     max_upload_size_bytes: int = 2 * 1024 * 1024
     upload_storage_dir: Path = Path("data/raw/uploads")
     processed_storage_dir: Path = Path("data/processed/telemetry")
