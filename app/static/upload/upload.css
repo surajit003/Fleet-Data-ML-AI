@@ -67,11 +67,12 @@ form {
   display: grid;
   gap: 24px;
   margin-top: 28px;
+  min-width: 0;
 }
 
 @media (min-width: 900px) {
   .layout {
-    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
     align-items: start;
   }
 }
@@ -81,6 +82,7 @@ form {
   border-radius: 18px;
   padding: 20px;
   background: rgba(255, 255, 255, 0.65);
+  min-width: 0;
 }
 
 .panel h2,
@@ -205,16 +207,19 @@ code {
 .sidebar {
   display: grid;
   gap: 18px;
+  min-width: 0;
 }
 
 .group-grid {
   display: grid;
   gap: 18px;
+  min-width: 0;
 }
 
 .group-card {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .group-card h3 {
@@ -235,6 +240,8 @@ code {
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.72);
   padding: 14px 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .field-topline {
@@ -252,17 +259,20 @@ code {
 
 .field-guide small {
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .schema-note {
   margin: 0;
   font-size: 0.94rem;
+  overflow-wrap: anywhere;
 }
 
 .results {
   display: grid;
   gap: 18px;
   margin-top: 20px;
+  min-width: 0;
 }
 
 .results-grid {
@@ -283,6 +293,7 @@ code {
   padding: 18px;
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .result-card h2 {
@@ -295,6 +306,7 @@ code {
   grid-template-columns: minmax(120px, 160px) minmax(0, 1fr);
   gap: 8px 12px;
   margin: 0;
+  min-width: 0;
 }
 
 .summary-list dt {
@@ -360,6 +372,7 @@ code {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.94rem;
+  min-width: 0;
 }
 
 .preview-table th,
@@ -382,6 +395,7 @@ code {
 .history-list {
   display: grid;
   gap: 12px;
+  min-width: 0;
 }
 
 .history-card,
