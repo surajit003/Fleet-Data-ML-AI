@@ -28,6 +28,9 @@ def test_sample_download_returns_csv() -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
-    assert "attachment; filename=\"telemetry-sample.csv\"" == response.headers["content-disposition"]
+    assert (
+        'attachment; filename="telemetry-sample.csv"'
+        == response.headers["content-disposition"]
+    )
     assert response.text.startswith("fetched_at,Imeino,Vehicle_No")
     assert "Demo Vehicle 0001" in response.text

@@ -56,7 +56,11 @@ TelemetryUploadServiceDep = Annotated[
 def _render_upload_page(app_name: str, api_prefix: str) -> str:
     grouped_fields: dict[str, list[str]] = {}
     for field in TELEMETRY_FIELD_GUIDE:
-        badge_class = "badge optional" if field.value_requirement == "Optional value" else "badge required"
+        badge_class = (
+            "badge optional"
+            if field.value_requirement == "Optional value"
+            else "badge required"
+        )
         grouped_fields.setdefault(field.group, []).append(
             f"""
             <li>
@@ -99,7 +103,12 @@ def read_upload_page(app_settings: SettingsDep) -> str:
 
 @ui_router.get("/upload/sample", tags=["ui"])
 def download_sample_csv() -> Response:
-    csv_content = ",".join(REQUIRED_TELEMETRY_COLUMNS) + "\n" + ",".join(SAMPLE_TELEMETRY_ROW) + "\n"
+    csv_content = (
+        ",".join(REQUIRED_TELEMETRY_COLUMNS)
+        + "\n"
+        + ",".join(SAMPLE_TELEMETRY_ROW)
+        + "\n"
+    )
     return Response(
         content=csv_content,
         media_type="text/csv",
