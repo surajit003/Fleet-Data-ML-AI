@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: fleet-data-ml-ai
+    runtime: python
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: uv sync
+    startCommand: uv run fastapi run --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.3
+      - key: ENVIRONMENT
+        value: production

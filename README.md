@@ -14,7 +14,7 @@ This first milestone sets up a clean FastAPI service skeleton with:
 - environment-based configuration with Pydantic Settings
 - structured JSON logging with `structlog`
 - tests, linting, and strict type checking
-- FastAPI Cloud deployment readiness
+- Render deployment readiness
 
 ## Tech stack
 
@@ -88,24 +88,32 @@ git push -u origin main
 This project includes:
 
 - `.github/workflows/ci.yml` for tests, Ruff, and MyPy on push and pull request
-- `.github/workflows/deploy-fastapi-cloud.yml` for FastAPI Cloud deployment on `main` and manual dispatch
+- `render.yaml` for Render infrastructure-as-code deployment settings
 
-## FastAPI Cloud CI/CD
+## Render deployment
 
-One-time bootstrap:
+Render can auto-deploy directly from GitHub, so no custom deployment workflow is required.
 
-1. Run a first local deploy with `fastapi deploy` to create and link the FastAPI Cloud app.
-2. In FastAPI Cloud, create a deploy token for the app.
-3. In GitHub repository secrets, add `FASTAPI_CLOUD_TOKEN` and `FASTAPI_CLOUD_APP_ID`.
-4. Push to `main` or trigger the deploy workflow manually.
+One-time setup:
 
-FastAPI Cloud deploys with:
+1. Create a Render account and connect your GitHub account.
+2. In Render, create a new `Web Service` from this repository.
+3. Let Render detect `render.yaml`, or enter the same settings manually.
+4. Keep `main` as the auto-deploy branch.
+
+Render uses:
 
 ```bash
-uv run fastapi deploy
+uv sync
+uv run fastapi run --host 0.0.0.0 --port $PORT
 ```
 
-The workflow uses the official token-based CI/CD pattern for FastAPI Cloud.
+This repository pins Python with `.python-version` and `PYTHON_VERSION=3.14.3` in `render.yaml`.
+
+Useful endpoints after deploy:
+
+- `GET /`
+- `GET /api/v1/health`
 
 ## Scope guardrails
 
