@@ -381,6 +381,10 @@ def test_duckdb_summary_returns_basic_metrics() -> None:
     assert body["distinct_vehicle_count"] == 1
     assert body["first_recorded_at"] == "2026-04-29T16:49:50"
     assert body["last_recorded_at"] == "2026-04-29T16:49:50"
+    assert body["records_by_day"] == [{"label": "2026-04-29", "count": 1}]
+    assert body["records_by_vehicle"] == [
+        {"label": "BCA 4676 (COMPANY)", "count": 1}
+    ]
     assert body["vehicle_registration"] is None
     assert body["start_recorded_at"] is None
     assert body["end_recorded_at"] is None
@@ -417,6 +421,9 @@ def test_duckdb_summary_accepts_filters() -> None:
     assert body["row_count"] == 1
     assert body["distinct_vehicle_count"] == 1
     assert body["vehicle_registration"] == "BCA 4676 (COMPANY)"
+    assert body["records_by_vehicle"] == [
+        {"label": "BCA 4676 (COMPANY)", "count": 1}
+    ]
 
 
 def test_duckdb_summary_rejects_missing_file() -> None:

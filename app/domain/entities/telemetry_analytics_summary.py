@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.domain.entities.telemetry_analytics_breakdown_row import (
+    TelemetryAnalyticsBreakdownRow,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class TelemetryAnalyticsSummary:
@@ -10,3 +14,5 @@ class TelemetryAnalyticsSummary:
     distinct_vehicle_count: int
     first_recorded_at: str | None
     last_recorded_at: str | None
+    records_by_day: tuple[TelemetryAnalyticsBreakdownRow, ...]
+    records_by_vehicle: tuple[TelemetryAnalyticsBreakdownRow, ...]

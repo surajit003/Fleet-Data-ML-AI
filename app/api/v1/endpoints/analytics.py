@@ -10,7 +10,10 @@ from app.domain.entities.telemetry_analytics_query import TelemetryAnalyticsQuer
 from app.infrastructure.repositories.duckdb_telemetry_analytics_repository import (
     DuckDBTelemetryAnalyticsRepository,
 )
-from app.schemas.analytics import TelemetryAnalyticsSummaryResponse
+from app.schemas.analytics import (
+    TelemetryAnalyticsBreakdownRowResponse,
+    TelemetryAnalyticsSummaryResponse,
+)
 
 router = APIRouter(prefix="/analytics")
 
@@ -65,6 +68,14 @@ def read_telemetry_summary(
         distinct_vehicle_count=summary.distinct_vehicle_count,
         first_recorded_at=summary.first_recorded_at,
         last_recorded_at=summary.last_recorded_at,
+        records_by_day=[
+            TelemetryAnalyticsBreakdownRowResponse(label=row.label, count=row.count)
+            for row in summary.records_by_day
+        ],
+        records_by_vehicle=[
+            TelemetryAnalyticsBreakdownRowResponse(label=row.label, count=row.count)
+            for row in summary.records_by_vehicle
+        ],
         vehicle_registration=vehicle_registration,
         start_recorded_at=start_recorded_at,
         end_recorded_at=end_recorded_at,

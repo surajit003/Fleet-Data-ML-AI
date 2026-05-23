@@ -327,6 +327,17 @@ code {
   font-size: 1.05rem;
 }
 
+.analytics-table-block {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.analytics-table-block h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
 .summary-list {
   display: grid;
   grid-template-columns: minmax(120px, 160px) minmax(0, 1fr);
@@ -416,6 +427,34 @@ code {
 
 .table-scroll {
   overflow-x: auto;
+}
+
+.analytics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94rem;
+  min-width: 0;
+}
+
+.analytics-table th,
+.analytics-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(217, 205, 184, 0.8);
+  vertical-align: top;
+}
+
+.analytics-table th {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.analytics-empty {
+  border-radius: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
 }
 
 .history-list {

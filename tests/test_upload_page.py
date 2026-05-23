@@ -28,6 +28,8 @@ def test_upload_page_renders_form() -> None:
     assert 'id="api-key"' in response.text
     assert "run-analytics-button" in response.text
     assert "analytics-summary" in response.text
+    assert "analytics-by-day" in response.text
+    assert "analytics-by-vehicle" in response.text
     assert 'type="file"' in response.text
     assert '/static/upload/upload.css' in response.text
     assert '/static/upload/upload.js' in response.text

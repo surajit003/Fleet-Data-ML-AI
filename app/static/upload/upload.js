@@ -12,6 +12,8 @@ const analyticsStartRecordedAt = document.getElementById("analytics-start-record
 const analyticsEndRecordedAt = document.getElementById("analytics-end-recorded-at");
 const runAnalyticsButton = document.getElementById("run-analytics-button");
 const analyticsSummary = document.getElementById("analytics-summary");
+const analyticsByDay = document.getElementById("analytics-by-day");
+const analyticsByVehicle = document.getElementById("analytics-by-vehicle");
 const prepareTransformButton = document.getElementById("prepare-transform-button");
 const runTransformButton = document.getElementById("run-transform-button");
 const downloadProcessedLink = document.getElementById("download-processed-link");
@@ -244,6 +246,7 @@ async function loadUploadDetail(apiPrefix, storedFilename) {
     void runDuckDbSummary();
   } else if (analyticsSummary) {
     analyticsSummary.innerHTML = "";
+    renderAnalyticsBreakdowns({ records_by_day: [], records_by_vehicle: [] });
   }
   results.hidden = false;
   message.textContent = "Loaded a previous ingestion run for review.";
@@ -269,6 +272,57 @@ function renderAnalyticsSummary(data) {
         `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`,
     )
     .join("");
+}
+
+function renderAnalyticsTable(target, rows, emptyMessage) {
+  if (!target) {
+    return;
+  }
+
+  if (!rows || rows.length === 0) {
+    target.innerHTML = `<div class="analytics-empty">${escapeHtml(emptyMessage)}</div>`;
+    return;
+  }
+
+  const body = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeHtml(row.label)}</td>
+          <td>${escapeHtml(row.count)}</td>
+        </tr>
+      `,
+    )
+    .join("");
+
+  target.innerHTML = `
+    <div class="table-scroll">
+      <table class="analytics-table">
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>Rows</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${body}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAnalyticsBreakdowns(data) {
+  renderAnalyticsTable(
+    analyticsByDay,
+    data.records_by_day ?? [],
+    "No daily breakdown could be generated.",
+  );
+  renderAnalyticsTable(
+    analyticsByVehicle,
+    data.records_by_vehicle ?? [],
+    "No vehicle breakdown could be generated.",
+  );
 }
 
 async function runDuckDbSummary() {
@@ -316,6 +370,7 @@ async function runDuckDbSummary() {
   }
 
   renderAnalyticsSummary(data);
+  renderAnalyticsBreakdowns(data);
   message.textContent = "DuckDB summary loaded.";
   message.className = "status";
 }
@@ -367,6 +422,7 @@ if (form && input && message && results && summary && warnings && previewTableWr
       void runDuckDbSummary();
     } else if (analyticsSummary) {
       analyticsSummary.innerHTML = "";
+      renderAnalyticsBreakdowns({ records_by_day: [], records_by_vehicle: [] });
     }
     await loadHistory(apiPrefix);
 
