@@ -1,0 +1,7 @@
+project_id            = "your-gcp-project-id"
+location              = "US"
+raw_bucket_name       = "fleet-data-ml-ai-raw"
+curated_bucket_name   = "fleet-data-ml-ai-curated"
+bigquery_dataset_id   = "telemetry"
+service_account_id    = "fleet-data-ml-ai"
+

@@ -7,6 +7,12 @@ from app.application.services.telemetry_analytics_service import (
 )
 from app.core.config import Settings, get_settings
 from app.domain.entities.telemetry_analytics_query import TelemetryAnalyticsQuery
+from app.domain.repositories.telemetry_analytics_repository import (
+    TelemetryAnalyticsRepository,
+)
+from app.infrastructure.repositories.bigquery_telemetry_analytics_repository import (
+    BigQueryTelemetryAnalyticsRepository,
+)
 from app.infrastructure.repositories.duckdb_telemetry_analytics_repository import (
     DuckDBTelemetryAnalyticsRepository,
 )
@@ -23,9 +29,20 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 def get_telemetry_analytics_service(
     settings: SettingsDep,
 ) -> TelemetryAnalyticsService:
-    repository = DuckDBTelemetryAnalyticsRepository(
-        processed_storage_dir=settings.processed_storage_dir,
-    )
+    repository: TelemetryAnalyticsRepository
+    if settings.analytics_backend == "bigquery":
+        if not settings.gcp_project_id or not settings.bigquery_dataset_id:
+            raise ValueError(
+                "BigQuery analytics requires GCP project and dataset settings."
+            )
+        repository = BigQueryTelemetryAnalyticsRepository(
+            project_id=settings.gcp_project_id,
+            dataset_id=settings.bigquery_dataset_id,
+        )
+    else:
+        repository = DuckDBTelemetryAnalyticsRepository(
+            processed_storage_dir=settings.processed_storage_dir,
+        )
     return TelemetryAnalyticsService(repository=repository)
 
 

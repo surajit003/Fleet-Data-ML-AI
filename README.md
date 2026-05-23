@@ -2,7 +2,7 @@
 
 ## Project goal
 
-`fleet-data-ml-ai` is a production-style learning project for building a telemetry analytics platform in stages. The long-term direction includes big data processing, local analytics with DuckDB, AWS Athena querying, and MLOps workflows, but the current milestone keeps the scope intentionally small.
+`fleet-data-ml-ai` is a production-style learning project for building a telemetry analytics platform in stages. The long-term direction includes big data processing, local analytics with DuckDB, and a cloud lakehouse path on Google Cloud with Cloud Storage and BigQuery. The current milestone keeps the scope intentionally small.
 
 ## Current milestone
 
@@ -12,6 +12,7 @@ This first milestone sets up a clean FastAPI service skeleton with:
 - application factory and lifespan hooks
 - health and root endpoints
 - CSV telemetry upload with a fixed ingestion column schema
+- opt-in storage and analytics backends for local DuckDB or Google Cloud
 - environment-based configuration with Pydantic Settings
 - structured JSON logging with `structlog`
 - tests, linting, and strict type checking
@@ -67,12 +68,10 @@ The service exposes:
 
 ## Planned future milestones
 
-- file upload
 - telemetry data anonymization
 - Parquet conversion
 - DuckDB local analytics
-- S3 data lake
-- AWS Athena analytics
+- cloud analytics on Google Cloud
 - MLOps
 
 ## GitHub workflow
@@ -128,10 +127,12 @@ The telemetry upload endpoint currently accepts:
 - maximum file size of `2 MB`
 - the exact telemetry ingestion header order defined in `app/domain/telemetry_schema.py`
 
-The raw file is stored locally under `data/raw/uploads/` for now, and the application returns the internal domain field mapping used by later processing stages.
+The raw file is stored locally under `data/raw/uploads/` by default, and the application returns the internal domain field mapping used by later processing stages.
+
+If you set `STORAGE_BACKEND=gcs` and `ANALYTICS_BACKEND=bigquery`, the app will use the Google Cloud repositories instead of the local file and DuckDB path. Configure the corresponding GCP project, bucket, and dataset settings in your environment, and provide credentials through your deployment platform's secret handling.
 
 There is also a small HTML upload page at `GET /upload` that posts to the same API endpoint.
 
 ## Scope guardrails
 
-This repository does not yet include a database, Docker setup, file ingestion pipeline, AWS integrations, DuckDB analytics, Athena queries, or machine learning components. Those will be added in later milestones.
+This repository does not yet include a general-purpose operational database, Docker setup, or machine learning components. Those will be added in later milestones.

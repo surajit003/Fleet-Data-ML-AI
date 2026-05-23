@@ -6,6 +6,9 @@ from typing import Literal
 import duckdb
 
 from app.domain.entities.duplicate_row_diagnostic import DuplicateRowDiagnostic
+from app.domain.repositories.telemetry_curated_artifact_repository import (
+    TelemetryCuratedArtifactRepository,
+)
 from app.domain.telemetry_schema import REQUIRED_TELEMETRY_COLUMNS, TELEMETRY_TO_DOMAIN_FIELD_MAP
 
 DuplicateStrategy = Literal["exact_event", "event_with_position"]
@@ -25,10 +28,12 @@ class TelemetryTransformService:
         raw_storage_dir: Path,
         processed_storage_dir: Path,
         duplicate_strategy: DuplicateStrategy = "exact_event",
+        curated_artifact_repository: TelemetryCuratedArtifactRepository | None = None,
     ) -> None:
         self._raw_storage_dir = raw_storage_dir
         self._processed_storage_dir = processed_storage_dir
         self._duplicate_strategy = duplicate_strategy
+        self._curated_artifact_repository = curated_artifact_repository
 
     def transform_upload(self, stored_filename: str) -> TransformResult:
         source_path = self._raw_storage_dir / stored_filename
@@ -93,6 +98,12 @@ class TelemetryTransformService:
 
         if temp_csv_path.exists():
             temp_csv_path.unlink()
+
+        if self._curated_artifact_repository is not None:
+            self._curated_artifact_repository.publish_curated_artifact(
+                stored_filename=stored_filename,
+                processed_path=processed_path,
+            )
 
         return TransformResult(
             processed_path=processed_path,

@@ -26,6 +26,12 @@ from app.domain.upload_status import (
     can_run_transform,
     derive_validation_status,
 )
+from app.infrastructure.repositories.gcp_telemetry_curated_artifact_repository import (
+    GcpTelemetryCuratedArtifactRepository,
+)
+from app.infrastructure.repositories.gcs_upload_storage_repository import (
+    GcsUploadStorageRepository,
+)
 from app.infrastructure.repositories.local_upload_storage_repository import (
     LocalUploadStorageRepository,
 )
@@ -52,6 +58,14 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
 def get_upload_storage_repository(settings: SettingsDep) -> UploadStorageRepository:
+    if settings.storage_backend == "gcs":
+        if not settings.gcp_project_id or not settings.gcs_raw_bucket_name:
+            raise ValueError("GCS upload storage requires GCP project and raw bucket settings.")
+        return GcsUploadStorageRepository(
+            storage_dir=settings.upload_storage_dir,
+            project_id=settings.gcp_project_id,
+            raw_bucket_name=settings.gcs_raw_bucket_name,
+        )
     return LocalUploadStorageRepository(storage_dir=settings.upload_storage_dir)
 
 
@@ -72,10 +86,24 @@ UploadAuditRepositoryDep = Annotated[
 
 
 def get_telemetry_transform_service(settings: SettingsDep) -> TelemetryTransformService:
+    curated_artifact_repository = None
+    if settings.storage_backend == "gcs":
+        if not settings.gcp_project_id or not settings.gcs_curated_bucket_name:
+            raise ValueError(
+                "GCS curated publishing requires GCP project and curated bucket settings."
+            )
+        if not settings.bigquery_dataset_id:
+            raise ValueError("BigQuery dataset is required for GCP curated publishing.")
+        curated_artifact_repository = GcpTelemetryCuratedArtifactRepository(
+            project_id=settings.gcp_project_id,
+            curated_bucket_name=settings.gcs_curated_bucket_name,
+            bigquery_dataset_id=settings.bigquery_dataset_id,
+        )
     return TelemetryTransformService(
         raw_storage_dir=settings.upload_storage_dir,
         processed_storage_dir=settings.processed_storage_dir,
         duplicate_strategy=settings.duplicate_strategy,
+        curated_artifact_repository=curated_artifact_repository,
     )
 
 
