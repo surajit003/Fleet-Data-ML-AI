@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pyiceberg.exceptions import NoSuchTableError
 
 from app.application.services.telemetry_analytics_service import (
     TelemetryAnalyticsService,
@@ -31,18 +32,9 @@ def get_telemetry_analytics_service(
 ) -> TelemetryAnalyticsService:
     repository: TelemetryAnalyticsRepository
     if settings.analytics_backend == "bigquery":
-        if not settings.gcp_project_id or not settings.bigquery_dataset_id:
-            raise ValueError(
-                "BigQuery analytics requires GCP project and dataset settings."
-            )
-        repository = BigQueryTelemetryAnalyticsRepository(
-            project_id=settings.gcp_project_id,
-            dataset_id=settings.bigquery_dataset_id,
-        )
+        repository = BigQueryTelemetryAnalyticsRepository(settings=settings)
     else:
-        repository = DuckDBTelemetryAnalyticsRepository(
-            processed_storage_dir=settings.processed_storage_dir,
-        )
+        repository = DuckDBTelemetryAnalyticsRepository(settings=settings)
     return TelemetryAnalyticsService(repository=repository)
 
 
@@ -72,6 +64,11 @@ def read_telemetry_summary(
                 end_recorded_at=end_recorded_at,
             )
         )
+    except NoSuchTableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Curated upload not found.",
+        ) from exc
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

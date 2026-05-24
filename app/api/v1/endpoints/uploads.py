@@ -13,6 +13,9 @@ from app.domain.entities.upload_audit_detail import UploadAuditDetail
 from app.domain.entities.upload_audit_record import UploadAuditRecord
 from app.domain.entities.upload_sanity_summary import UploadSanitySummary
 from app.domain.exceptions import InvalidTelemetryUploadError
+from app.domain.repositories.telemetry_curated_artifact_repository import (
+    TelemetryCuratedArtifactRepository,
+)
 from app.domain.repositories.upload_audit_repository import UploadAuditRepository
 from app.domain.repositories.upload_storage_repository import UploadStorageRepository
 from app.domain.telemetry_schema import (
@@ -31,6 +34,9 @@ from app.infrastructure.repositories.gcp_telemetry_curated_artifact_repository i
 )
 from app.infrastructure.repositories.gcs_upload_storage_repository import (
     GcsUploadStorageRepository,
+)
+from app.infrastructure.repositories.local_telemetry_curated_artifact_repository import (
+    LocalTelemetryCuratedArtifactRepository,
 )
 from app.infrastructure.repositories.local_upload_storage_repository import (
     LocalUploadStorageRepository,
@@ -85,19 +91,20 @@ UploadAuditRepositoryDep = Annotated[
 ]
 
 
-def get_telemetry_transform_service(settings: SettingsDep) -> TelemetryTransformService:
-    curated_artifact_repository = None
+def get_telemetry_transform_service(
+    settings: SettingsDep,
+    audit_repository: UploadAuditRepositoryDep,
+) -> TelemetryTransformService:
+    curated_artifact_repository: TelemetryCuratedArtifactRepository | None = None
     if settings.storage_backend == "gcs":
-        if not settings.gcp_project_id or not settings.gcs_curated_bucket_name:
-            raise ValueError(
-                "GCS curated publishing requires GCP project and curated bucket settings."
-            )
-        if not settings.bigquery_dataset_id:
-            raise ValueError("BigQuery dataset is required for GCP curated publishing.")
         curated_artifact_repository = GcpTelemetryCuratedArtifactRepository(
-            project_id=settings.gcp_project_id,
-            curated_bucket_name=settings.gcs_curated_bucket_name,
-            bigquery_dataset_id=settings.bigquery_dataset_id,
+            settings=settings,
+            upload_audit_repository=audit_repository,
+        )
+    elif settings.storage_backend == "local":
+        curated_artifact_repository = LocalTelemetryCuratedArtifactRepository(
+            settings=settings,
+            upload_audit_repository=audit_repository,
         )
     return TelemetryTransformService(
         raw_storage_dir=settings.upload_storage_dir,

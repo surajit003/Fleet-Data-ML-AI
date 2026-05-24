@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,6 +13,7 @@ from app.api.v1.endpoints.uploads import ui_router as uploads_ui_router
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
+from app.infrastructure.iceberg.bootstrap import bootstrap_iceberg_table
 from app.infrastructure.repositories.sqlite_upload_audit_repository import (
     initialize_upload_metadata_database,
 )
@@ -20,10 +22,17 @@ from app.middleware.upload_auth import enforce_upload_api_key
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
+def _sync_google_environment(settings: Settings) -> None:
+    if settings.gcp_project_id:
+        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", settings.gcp_project_id)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    _sync_google_environment(settings)
     initialize_upload_metadata_database(settings.upload_metadata_db_path)
+    bootstrap_iceberg_table(settings)
     logger = get_logger().bind(
         service=settings.app_name,
         version=settings.app_version,
@@ -38,6 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     configure_logging()
     settings = get_settings()
+    _sync_google_environment(settings)
     static_dir = Path(__file__).resolve().parent / "static"
 
     app = FastAPI(

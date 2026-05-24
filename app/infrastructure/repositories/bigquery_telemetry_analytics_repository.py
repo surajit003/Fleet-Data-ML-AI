@@ -1,8 +1,12 @@
+from __future__ import annotations
+
+from datetime import date, datetime
 from pathlib import Path
 
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 
+from app.core.config import Settings
 from app.domain.entities.telemetry_analytics_breakdown_row import (
     TelemetryAnalyticsBreakdownRow,
 )
@@ -14,17 +18,15 @@ from app.domain.repositories.telemetry_analytics_repository import (
 
 
 class BigQueryTelemetryAnalyticsRepository(TelemetryAnalyticsRepository):
-    def __init__(self, project_id: str, dataset_id: str) -> None:
-        self._project_id = project_id
-        self._dataset_id = dataset_id
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
 
     def summarize_curated_upload(
         self,
         query: TelemetryAnalyticsQuery,
     ) -> TelemetryAnalyticsSummary:
-        table_name = f"curated_{Path(query.stored_filename).stem}"
-        table_id = f"{self._project_id}.{self._dataset_id}.{table_name}"
-        client = bigquery.Client(project=self._project_id)
+        table_id = self._table_id()
+        client = bigquery.Client(project=self._project_id())
         try:
             client.get_table(table_id)
         except NotFound as exc:
@@ -49,7 +51,7 @@ class BigQueryTelemetryAnalyticsRepository(TelemetryAnalyticsRepository):
 
         return TelemetryAnalyticsSummary(
             stored_filename=query.stored_filename,
-            processed_path=Path(f"{table_name}.parquet"),
+            processed_path=Path(f"{self._settings.iceberg_namespace}/{self._settings.iceberg_table_name}"),
             row_count=int(row["row_count"]),
             distinct_vehicle_count=int(row["distinct_vehicle_count"]),
             first_recorded_at=self._to_iso_string(row["first_recorded_at"]),
@@ -70,43 +72,29 @@ class BigQueryTelemetryAnalyticsRepository(TelemetryAnalyticsRepository):
             ),
         )
 
+    def _table_id(self) -> str:
+        return f"{self._project_id()}.{self._dataset_id()}.{self._settings.iceberg_table_name}"
+
+    def _project_id(self) -> str:
+        project_id = self._settings.iceberg_project_id or self._settings.gcp_project_id
+        if project_id is None:
+            raise ValueError("BigQuery analytics requires a project id.")
+        return project_id
+
+    def _dataset_id(self) -> str:
+        if self._settings.bigquery_dataset_id is None:
+            raise ValueError("BigQuery analytics requires a dataset id.")
+        return self._settings.bigquery_dataset_id
+
     def _build_summary_query(
         self,
         table_id: str,
         query: TelemetryAnalyticsQuery,
     ) -> tuple[str, list[object]]:
-        clauses = [f"SELECT * FROM `{table_id}` WHERE 1 = 1"]
-        params: list[object] = []
-        if query.vehicle_registration:
-            clauses.append("AND vehicle_registration = @vehicle_registration")
-            params.append(
-                bigquery.ScalarQueryParameter(
-                    "vehicle_registration",
-                    "STRING",
-                    query.vehicle_registration,
-                )
-            )
-        if query.start_recorded_at:
-            clauses.append("AND TIMESTAMP(recorded_at) >= TIMESTAMP(@start_recorded_at)")
-            params.append(
-                bigquery.ScalarQueryParameter(
-                    "start_recorded_at",
-                    "STRING",
-                    query.start_recorded_at,
-                )
-            )
-        if query.end_recorded_at:
-            clauses.append("AND TIMESTAMP(recorded_at) <= TIMESTAMP(@end_recorded_at)")
-            params.append(
-                bigquery.ScalarQueryParameter(
-                    "end_recorded_at",
-                    "STRING",
-                    query.end_recorded_at,
-                )
-            )
+        clause, params = self._build_where_clause(query)
         sql = f"""
             WITH telemetry AS (
-                {' '.join(clauses)}
+                SELECT * FROM `{table_id}` WHERE {clause}
             )
             SELECT
                 COUNT(*) AS row_count,
@@ -122,9 +110,10 @@ class BigQueryTelemetryAnalyticsRepository(TelemetryAnalyticsRepository):
         table_id: str,
         query: TelemetryAnalyticsQuery,
     ) -> str:
+        clause, _ = self._build_where_clause(query)
         return f"""
             WITH telemetry AS (
-                {' '.join(self._base_clauses(table_id, query))}
+                SELECT * FROM `{table_id}` WHERE {clause}
             )
             SELECT
                 DATE(TIMESTAMP(recorded_at)) AS recorded_day,
@@ -140,9 +129,10 @@ class BigQueryTelemetryAnalyticsRepository(TelemetryAnalyticsRepository):
         table_id: str,
         query: TelemetryAnalyticsQuery,
     ) -> str:
+        clause, _ = self._build_where_clause(query)
         return f"""
             WITH telemetry AS (
-                {' '.join(self._base_clauses(table_id, query))}
+                SELECT * FROM `{table_id}` WHERE {clause}
             )
             SELECT
                 COALESCE(
@@ -155,21 +145,49 @@ class BigQueryTelemetryAnalyticsRepository(TelemetryAnalyticsRepository):
             ORDER BY row_count DESC, vehicle_registration ASC
         """
 
-    def _base_clauses(
-        self,
-        table_id: str,
-        query: TelemetryAnalyticsQuery,
-    ) -> list[str]:
-        clauses = [f"SELECT * FROM `{table_id}` WHERE 1 = 1"]
+    def _build_where_clause(self, query: TelemetryAnalyticsQuery) -> tuple[str, list[object]]:
+        clauses = ["stored_filename = @stored_filename"]
+        params: list[object] = [
+            bigquery.ScalarQueryParameter(
+                "stored_filename",
+                "STRING",
+                query.stored_filename,
+            )
+        ]
         if query.vehicle_registration:
-            clauses.append("AND vehicle_registration = @vehicle_registration")
+            clauses.append("vehicle_registration = @vehicle_registration")
+            params.append(
+                bigquery.ScalarQueryParameter(
+                    "vehicle_registration",
+                    "STRING",
+                    query.vehicle_registration,
+                )
+            )
         if query.start_recorded_at:
-            clauses.append("AND TIMESTAMP(recorded_at) >= TIMESTAMP(@start_recorded_at)")
+            clauses.append("TIMESTAMP(recorded_at) >= TIMESTAMP(@start_recorded_at)")
+            params.append(
+                bigquery.ScalarQueryParameter(
+                    "start_recorded_at",
+                    "STRING",
+                    query.start_recorded_at,
+                )
+            )
         if query.end_recorded_at:
-            clauses.append("AND TIMESTAMP(recorded_at) <= TIMESTAMP(@end_recorded_at)")
-        return clauses
+            clauses.append("TIMESTAMP(recorded_at) <= TIMESTAMP(@end_recorded_at)")
+            params.append(
+                bigquery.ScalarQueryParameter(
+                    "end_recorded_at",
+                    "STRING",
+                    query.end_recorded_at,
+                )
+            )
+        return " AND ".join(clauses), params
 
     def _to_iso_string(self, value: object) -> str | None:
         if value is None:
             return None
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, date):
+            return value.isoformat()
         return str(value).replace(" ", "T", 1)

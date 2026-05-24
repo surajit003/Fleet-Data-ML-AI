@@ -1,43 +1,94 @@
+from __future__ import annotations
+
 from pathlib import Path
 
-from google.cloud import bigquery
+import pyarrow as pa
+import pyarrow.parquet as pq
 from google.cloud.storage import Client as StorageClient
+from pyiceberg.expressions import BooleanExpression, EqualTo
 
+from app.core.config import Settings
 from app.domain.repositories.telemetry_curated_artifact_repository import (
     TelemetryCuratedArtifactRepository,
+)
+from app.domain.repositories.upload_audit_repository import UploadAuditRepository
+from app.infrastructure.iceberg.bootstrap import bootstrap_iceberg_table
+from app.infrastructure.iceberg.catalog import (
+    load_iceberg_catalog,
+    resolve_iceberg_bucket_name,
+    resolve_iceberg_identifier,
+    resolve_iceberg_project_id,
 )
 
 
 class GcpTelemetryCuratedArtifactRepository(TelemetryCuratedArtifactRepository):
     def __init__(
         self,
-        project_id: str,
-        curated_bucket_name: str,
-        bigquery_dataset_id: str,
+        settings: Settings,
+        upload_audit_repository: UploadAuditRepository | None = None,
     ) -> None:
-        self._project_id = project_id
-        self._curated_bucket_name = curated_bucket_name
-        self._bigquery_dataset_id = bigquery_dataset_id
+        self._settings = settings
+        self._upload_audit_repository = upload_audit_repository
 
     def publish_curated_artifact(
         self,
         stored_filename: str,
         processed_path: Path,
     ) -> None:
+        if self._was_already_ingested(stored_filename):
+            return
+
+        project_id = resolve_iceberg_project_id(self._settings)
+        bucket_name = resolve_iceberg_bucket_name(self._settings)
+        if project_id is None or bucket_name is None:
+            raise ValueError("GCP curated publishing requires project and bucket settings.")
+
         curated_object_name = f"curated/{processed_path.name}"
-        storage_client = StorageClient(project=self._project_id)
-        bucket = storage_client.bucket(self._curated_bucket_name)
+        storage_client = StorageClient(project=project_id)
+        bucket = storage_client.bucket(bucket_name)
         blob = bucket.blob(curated_object_name)
         blob.upload_from_filename(str(processed_path), content_type="application/parquet")
 
-        table_name = f"curated_{Path(stored_filename).stem}"
-        table_id = f"{self._project_id}.{self._bigquery_dataset_id}.{table_name}"
-        external_config = bigquery.ExternalConfig("PARQUET")
-        external_config.source_uris = [f"gs://{self._curated_bucket_name}/{curated_object_name}"]
+        bootstrap_iceberg_table(self._settings)
+        table = load_iceberg_catalog(self._settings).load_table(
+            resolve_iceberg_identifier(self._settings)
+        )
+        if table.scan(row_filter=self._stored_filename_expression(stored_filename)).count() > 0:
+            return
 
-        table = bigquery.Table(table_id)
-        table.external_data_configuration = external_config
+        curated_table = pq.read_table(processed_path)  # type: ignore[no-untyped-call]
+        curated_table = self._add_stored_filename_column(curated_table, stored_filename)
+        table.append(curated_table)
 
-        bigquery_client = bigquery.Client(project=self._project_id)
-        bigquery_client.delete_table(table_id, not_found_ok=True)
-        bigquery_client.create_table(table)
+    def _was_already_ingested(self, stored_filename: str) -> bool:
+        if self._upload_audit_repository is None:
+            return False
+        detail = self._upload_audit_repository.get_upload_detail(stored_filename)
+        return bool(
+            detail
+            and detail.upload.transformed_row_count is not None
+            and detail.upload.processed_path
+        )
+
+    def _stored_filename_expression(self, stored_filename: str) -> BooleanExpression:
+        return EqualTo("stored_filename", value=stored_filename)  # type: ignore[misc, arg-type]
+
+    def _add_stored_filename_column(
+        self,
+        curated_table: pa.Table,
+        stored_filename: str,
+    ) -> pa.Table:
+        stored_filename_values = pa.array(
+            [stored_filename] * curated_table.num_rows,
+            type=pa.string(),
+        )
+        curated_table = curated_table.append_column("stored_filename", stored_filename_values)
+        ordered_columns = [
+            "stored_filename",
+            *[
+                name
+                for name in curated_table.column_names
+                if name != "stored_filename"
+            ],
+        ]
+        return curated_table.select(ordered_columns)

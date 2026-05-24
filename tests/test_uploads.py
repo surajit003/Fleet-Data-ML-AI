@@ -6,6 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
+from app.infrastructure.iceberg.catalog import (
+    load_gcp_iceberg_catalog,
+    load_local_iceberg_catalog,
+)
 from app.main import app
 
 client = TestClient(app)
@@ -30,17 +34,31 @@ TRACKZEE_ROW = (
 
 @pytest.fixture(autouse=True)
 def clean_upload_dir() -> Iterator[None]:
+    load_local_iceberg_catalog.cache_clear()
+    load_gcp_iceberg_catalog.cache_clear()
     upload_dir = Path("data/raw/uploads")
+    processed_dir = Path("data/processed/telemetry")
     metadata_dir = Path("data/metadata")
+    iceberg_dir = Path("data/iceberg")
     if upload_dir.exists():
         shutil.rmtree(upload_dir)
+    if processed_dir.exists():
+        shutil.rmtree(processed_dir)
     if metadata_dir.exists():
         shutil.rmtree(metadata_dir)
+    if iceberg_dir.exists():
+        shutil.rmtree(iceberg_dir)
+    load_local_iceberg_catalog.cache_clear()
+    load_gcp_iceberg_catalog.cache_clear()
     yield
     if upload_dir.exists():
         shutil.rmtree(upload_dir)
+    if processed_dir.exists():
+        shutil.rmtree(processed_dir)
     if metadata_dir.exists():
         shutil.rmtree(metadata_dir)
+    if iceberg_dir.exists():
+        shutil.rmtree(iceberg_dir)
 
 
 def test_upload_telemetry_csv_returns_created() -> None:

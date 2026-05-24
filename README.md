@@ -2,7 +2,7 @@
 
 ## Project goal
 
-`fleet-data-ml-ai` is a production-style learning project for building a telemetry analytics platform in stages. The long-term direction includes big data processing, local analytics with DuckDB, and a cloud lakehouse path on Google Cloud with Cloud Storage and BigQuery. The current milestone keeps the scope intentionally small.
+`fleet-data-ml-ai` is a production-style learning project for building a telemetry analytics platform in stages. The long-term direction includes big data processing, local analytics with DuckDB, and a cloud lakehouse path on Google Cloud with Cloud Storage, Iceberg, and BigQuery. The current milestone keeps the scope intentionally small.
 
 ## Current milestone
 
@@ -13,6 +13,7 @@ This first milestone sets up a clean FastAPI service skeleton with:
 - health and root endpoints
 - CSV telemetry upload with a fixed ingestion column schema
 - opt-in storage and analytics backends for local DuckDB or Google Cloud
+- Iceberg-backed curated storage and analytics adapters behind the same repository ports
 - environment-based configuration with Pydantic Settings
 - structured JSON logging with `structlog`
 - tests, linting, and strict type checking
@@ -129,7 +130,24 @@ The telemetry upload endpoint currently accepts:
 
 The raw file is stored locally under `data/raw/uploads/` by default, and the application returns the internal domain field mapping used by later processing stages.
 
-If you set `STORAGE_BACKEND=gcs` and `ANALYTICS_BACKEND=bigquery`, the app will use the Google Cloud repositories instead of the local file and DuckDB path. Configure the corresponding GCP project, bucket, and dataset settings in your environment, and provide credentials through your deployment platform's secret handling.
+### Runtime backends
+
+The repository supports two backend modes selected through environment variables:
+
+- `STORAGE_BACKEND=local` with `ANALYTICS_BACKEND=duckdb`
+- `STORAGE_BACKEND=gcs` with `ANALYTICS_BACKEND=bigquery`
+
+The Iceberg layer is configured separately so the repository ports stay stable while the infrastructure changes underneath them. Relevant settings include:
+
+- `ICEBERG_CATALOG_TYPE`
+- `ICEBERG_CATALOG_URI`
+- `ICEBERG_WAREHOUSE_URI`
+- `ICEBERG_NAMESPACE`
+- `ICEBERG_TABLE_NAME`
+- `ICEBERG_PROJECT_ID`
+- `ICEBERG_BUCKET_NAME`
+
+Local development uses a SQL catalog and file-backed warehouse. GCP mode uses the BigLake Iceberg REST catalog with a `gs://` warehouse. The application still keeps the local DuckDB path working as the baseline.
 
 There is also a small HTML upload page at `GET /upload` that posts to the same API endpoint.
 

@@ -1,8 +1,18 @@
+from __future__ import annotations
+
 from datetime import date, datetime
 from pathlib import Path
 
 import duckdb
+from pyiceberg.expressions import (
+    And,
+    BooleanExpression,
+    EqualTo,
+    GreaterThanOrEqual,
+    LessThanOrEqual,
+)
 
+from app.core.config import Settings
 from app.domain.entities.telemetry_analytics_breakdown_row import (
     TelemetryAnalyticsBreakdownRow,
 )
@@ -11,35 +21,58 @@ from app.domain.entities.telemetry_analytics_summary import TelemetryAnalyticsSu
 from app.domain.repositories.telemetry_analytics_repository import (
     TelemetryAnalyticsRepository,
 )
+from app.infrastructure.iceberg.catalog import load_iceberg_catalog, resolve_iceberg_identifier
 
 
 class DuckDBTelemetryAnalyticsRepository(TelemetryAnalyticsRepository):
-    def __init__(self, processed_storage_dir: Path) -> None:
-        self._processed_storage_dir = processed_storage_dir
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
 
     def summarize_curated_upload(
         self,
         query: TelemetryAnalyticsQuery,
     ) -> TelemetryAnalyticsSummary:
-        processed_path = (
-            self._processed_storage_dir
-            / f"curated_{Path(query.stored_filename).stem}.parquet"
+        table = load_iceberg_catalog(self._settings).load_table(
+            resolve_iceberg_identifier(self._settings)
         )
-        if not processed_path.exists():
-            raise FileNotFoundError(query.stored_filename)
+        row_filter = self._build_row_filter(query)
+        arrow_table = table.scan(row_filter=row_filter).to_arrow()
 
         with duckdb.connect(database=":memory:") as connection:
+            connection.register("telemetry", arrow_table)
             row = connection.execute(
-                self._summary_query(query),
-                self._build_params(processed_path, query),
+                """
+                SELECT
+                    COUNT(*) AS row_count,
+                    COUNT(DISTINCT vehicle_registration) AS distinct_vehicle_count,
+                    MIN(recorded_at) AS first_recorded_at,
+                    MAX(recorded_at) AS last_recorded_at
+                FROM telemetry
+                """
             ).fetchone()
             day_rows = connection.execute(
-                self._records_by_day_query(query),
-                self._build_params(processed_path, query),
+                """
+                SELECT
+                    CAST(recorded_at AS DATE) AS recorded_day,
+                    COUNT(*) AS row_count
+                FROM telemetry
+                WHERE recorded_at IS NOT NULL
+                GROUP BY 1
+                ORDER BY 1 ASC
+                """
             ).fetchall()
             vehicle_rows = connection.execute(
-                self._records_by_vehicle_query(query),
-                self._build_params(processed_path, query),
+                """
+                SELECT
+                    COALESCE(
+                        NULLIF(TRIM(vehicle_registration), ''),
+                        'Not provided'
+                    ) AS vehicle_registration,
+                    COUNT(*) AS row_count
+                FROM telemetry
+                GROUP BY 1
+                ORDER BY row_count DESC, vehicle_registration ASC
+                """
             ).fetchall()
 
         if row is None:
@@ -47,7 +80,7 @@ class DuckDBTelemetryAnalyticsRepository(TelemetryAnalyticsRepository):
 
         return TelemetryAnalyticsSummary(
             stored_filename=query.stored_filename,
-            processed_path=processed_path,
+            processed_path=Path(f"{self._settings.iceberg_namespace}/{self._settings.iceberg_table_name}"),
             row_count=int(row[0]),
             distinct_vehicle_count=int(row[1]),
             first_recorded_at=self._to_iso_string(row[2]),
@@ -68,78 +101,52 @@ class DuckDBTelemetryAnalyticsRepository(TelemetryAnalyticsRepository):
             ),
         )
 
+    def _build_row_filter(self, query: TelemetryAnalyticsQuery) -> BooleanExpression:
+        row_filter: BooleanExpression = self._equal_to(
+            "stored_filename",
+            query.stored_filename,
+        )
+        if query.vehicle_registration:
+            row_filter = And(
+                row_filter,
+                self._equal_to("vehicle_registration", query.vehicle_registration),
+            )
+        if query.start_recorded_at:
+            row_filter = And(
+                row_filter,
+                self._greater_than_or_equal(
+                    "recorded_at",
+                    self._parse_recorded_at(query.start_recorded_at),
+                ),
+            )
+        if query.end_recorded_at:
+            row_filter = And(
+                row_filter,
+                self._less_than_or_equal(
+                    "recorded_at",
+                    self._parse_recorded_at(query.end_recorded_at),
+                ),
+            )
+        return row_filter
+
+    def _equal_to(self, term: str, value: object) -> BooleanExpression:
+        return EqualTo(term, value=value)  # type: ignore[misc, arg-type]
+
+    def _greater_than_or_equal(self, term: str, value: object) -> BooleanExpression:
+        return GreaterThanOrEqual(term, value=value)  # type: ignore[misc, arg-type]
+
+    def _less_than_or_equal(self, term: str, value: object) -> BooleanExpression:
+        return LessThanOrEqual(term, value=value)  # type: ignore[misc, arg-type]
+
+    def _parse_recorded_at(self, value: str) -> datetime:
+        normalized_value = value.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized_value)
+
     def _to_iso_string(self, value: object) -> str | None:
         if value is None:
             return None
         if isinstance(value, datetime):
-            return value.isoformat(sep="T")
+            return value.isoformat()
         if isinstance(value, date):
             return value.isoformat()
         return str(value).replace(" ", "T", 1)
-
-    def _build_params(
-        self,
-        processed_path: Path,
-        query: TelemetryAnalyticsQuery,
-    ) -> list[object]:
-        params: list[object] = [str(processed_path)]
-        if query.vehicle_registration:
-            params.append(query.vehicle_registration)
-        if query.start_recorded_at:
-            params.append(query.start_recorded_at)
-        if query.end_recorded_at:
-            params.append(query.end_recorded_at)
-        return params
-
-    def _summary_query(self, query: TelemetryAnalyticsQuery) -> str:
-        return f"""
-            WITH telemetry AS (
-                {self._filtered_telemetry_select(query)}
-            )
-            SELECT
-                COUNT(*) AS row_count,
-                COUNT(DISTINCT vehicle_registration) AS distinct_vehicle_count,
-                MIN(TRY_CAST(recorded_at AS TIMESTAMP)) AS first_recorded_at,
-                MAX(TRY_CAST(recorded_at AS TIMESTAMP)) AS last_recorded_at
-            FROM telemetry
-        """
-
-    def _records_by_day_query(self, query: TelemetryAnalyticsQuery) -> str:
-        return f"""
-            WITH telemetry AS (
-                {self._filtered_telemetry_select(query)}
-            )
-            SELECT
-                CAST(TRY_CAST(recorded_at AS TIMESTAMP) AS DATE) AS recorded_day,
-                COUNT(*) AS row_count
-            FROM telemetry
-            WHERE TRY_CAST(recorded_at AS TIMESTAMP) IS NOT NULL
-            GROUP BY 1
-            ORDER BY 1 ASC
-        """
-
-    def _records_by_vehicle_query(self, query: TelemetryAnalyticsQuery) -> str:
-        return f"""
-            WITH telemetry AS (
-                {self._filtered_telemetry_select(query)}
-            )
-            SELECT
-                COALESCE(
-                    NULLIF(TRIM(vehicle_registration), ''),
-                    'Not provided'
-                ) AS vehicle_registration,
-                COUNT(*) AS row_count
-            FROM telemetry
-            GROUP BY 1
-            ORDER BY row_count DESC, vehicle_registration ASC
-        """
-
-    def _filtered_telemetry_select(self, query: TelemetryAnalyticsQuery) -> str:
-        clauses = ["SELECT * FROM read_parquet(?) WHERE 1 = 1"]
-        if query.vehicle_registration:
-            clauses.append("AND vehicle_registration = ?")
-        if query.start_recorded_at:
-            clauses.append("AND TRY_CAST(recorded_at AS TIMESTAMP) >= TRY_CAST(? AS TIMESTAMP)")
-        if query.end_recorded_at:
-            clauses.append("AND TRY_CAST(recorded_at AS TIMESTAMP) <= TRY_CAST(? AS TIMESTAMP)")
-        return " ".join(clauses)

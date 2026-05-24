@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DuplicateStrategy = Literal["exact_event", "event_with_position"]
 StorageBackend = Literal["local", "gcs"]
 AnalyticsBackend = Literal["duckdb", "bigquery"]
+IcebergCatalogType = Literal["rest", "sql"]
 
 
 class Settings(BaseSettings):
@@ -26,6 +27,13 @@ class Settings(BaseSettings):
     gcs_raw_bucket_name: str | None = None
     gcs_curated_bucket_name: str | None = None
     bigquery_dataset_id: str | None = None
+    iceberg_catalog_type: IcebergCatalogType = "sql"
+    iceberg_catalog_uri: str = "sqlite:///data/metadata/iceberg_catalog.db"
+    iceberg_warehouse_uri: str = "file://data/iceberg"
+    iceberg_namespace: str = "telemetry"
+    iceberg_table_name: str = "curated_events"
+    iceberg_project_id: str | None = None
+    iceberg_bucket_name: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
